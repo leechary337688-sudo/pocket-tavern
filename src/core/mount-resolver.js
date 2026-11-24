@@ -95,11 +95,12 @@ export function resolveMounts({
   const worldCfg = settings?.world || {};
   const configuredMax = Math.max(1, Number(worldCfg.maxBooks) || 1);
 
-  // 1) 会话级（最高优先级）
+  // 1) 会话级（最高优先级）。内嵌书由角色级自动激活，不当作会话主书重复挂。
   const chatWorldIds = asList(chat?.worldIds);
-  for (const id of chatWorldIds) push(byId.get(id) || null, 'chat', { reason: '会话指定' });
-  if (chatWorldIds.length) {
-    for (const id of chatWorldIds) {
+  const explicitChatIds = chatWorldIds.filter((id) => byId.get(id)?.scope !== 'embedded');
+  for (const id of explicitChatIds) push(byId.get(id) || null, 'chat', { reason: '会话指定' });
+  if (explicitChatIds.length) {
+    for (const id of explicitChatIds) {
       if (!byId.has(id)) {
         mounts.push({ id, name: '（已删除的世界书）', level: 'chat', levelLabel: '会话', included: false, reason: '会话引用的书已不存在' });
       }

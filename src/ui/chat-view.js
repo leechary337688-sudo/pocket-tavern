@@ -16,7 +16,7 @@ import {
 import { icon, iconButton } from './icons.js';
 import { openOverlay, actionSheet, confirmDialog, promptDialog } from './overlay.js';
 import { toast, toastError } from './toast.js';
-import { openGroupEditor } from './group-view.js';
+import { openGroupEditor, openWorldMountEditor } from './group-view.js';
 import { estimateTokens } from '../core/tokenizer-lite.js';
 import { formatRoll } from '../core/dice-engine.js';
 
@@ -252,6 +252,17 @@ export function mount(el, ctx) {
         chatInfo = info || engine.getChatInfo();
         titleEl.textContent = chatInfo.title || card.name || '酒馆';
         toast('群聊设置已保存', { type: 'success' });
+      },
+    });
+  }
+
+  async function openWorldMount() {
+    await openWorldMountEditor({
+      repo,
+      chat: engine.getChatInfo(),
+      onSave: async ({ worldIds, advancedWorlds }) => {
+        chatInfo = await engine.updateChatSettings({ worldIds, advancedWorlds });
+        toast('世界书挂载已保存', { type: 'success' });
       },
     });
   }
@@ -582,6 +593,7 @@ export function mount(el, ctx) {
       title: chatInfo.title || '酒馆',
       items: [
         { key: 'preview', label: '组装预览', icon: 'terminal', description: '看系统提示、世界书与聊天预算' },
+        { key: 'worldMount', label: '世界书挂载', icon: 'book', description: '一局一本；需要叠设定再开高级' },
         { key: 'world', label: '世界书', icon: 'book' },
         { key: 'cards', label: '角色卡库', icon: 'cards' },
         { key: 'rename', label: '重命名会话', icon: 'edit' },
@@ -591,6 +603,7 @@ export function mount(el, ctx) {
     });
     if (!action) return;
     if (action === 'preview') return openPreview();
+    if (action === 'worldMount') return openWorldMount();
     if (action === 'world') return ctx.onOpenWorldbook?.();
     if (action === 'cards') return ctx.onOpenCards?.();
     if (action === 'settings') return ctx.onOpenSettings?.();

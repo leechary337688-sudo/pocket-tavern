@@ -252,6 +252,7 @@ export class ChatEngine {
       cardId: this.chat.cardId,
       kind: this.kind,
       worldIds: Array.isArray(this.chat.worldIds) ? [...this.chat.worldIds] : [],
+      advancedWorlds: Boolean(this.chat.advancedWorlds),
       memberIds: Array.isArray(this.chat.memberIds) ? [...this.chat.memberIds] : [],
       messageCount: this.chat.messages.length,
       createdAt: this.chat.createdAt,

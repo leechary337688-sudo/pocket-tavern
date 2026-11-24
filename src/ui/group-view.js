@@ -235,3 +235,116 @@ export async function openGroupEditor({ repo, settings, chat = null, onSave } = 
   });
   return overlay;
 }
+
+/**
+ * 单聊/任意会话的主世界书挂载。
+ * 默认只挂一本；显式开启高级选项后最多 8 本。角色内嵌书不在这里选，随在场角色自动激活。
+ */
+export function openWorldMountEditor({ repo, chat, onSave }) {
+  const current = new Set(Array.isArray(chat?.worldIds) ? chat.worldIds : []);
+  let advanced = Boolean(chat?.advancedWorlds) || current.size > 1;
+  let worlds = [];
+  let selected = new Set(current);
+
+  const body = h('div', { class: 'world-mount' });
+  const overlay = openOverlay({
+    title: '世界书挂载',
+    subtitle: '一局默认一本；需要叠设定再开高级模式',
+    content: body,
+    variant: 'center',
+    actions: [
+      { label: '取消', kind: 'ghost', onClick: () => false },
+      {
+        label: '保存挂载',
+        kind: 'primary',
+        onClick: async () => {
+          const ids = advanced ? [...selected] : [singleSelect?.value].filter(Boolean);
+          try {
+            await onSave?.({ worldIds: ids.slice(0, advanced ? 8 : 1), advancedWorlds: advanced });
+            overlay.close(true);
+          } catch (err) {
+            toastError(`保存挂载失败：${err.message}`);
+          }
+          return false;
+        },
+      },
+    ],
+  });
+
+  let singleSelect = null;
+
+  function draw() {
+    clear(body);
+    if (!worlds.length) {
+      body.appendChild(h('p', { class: 'muted' }, '馆藏里还没有世界书。先去「世界书」页新建一本，或导入带内嵌书的角色卡。'));
+      return;
+    }
+    const library = worlds.filter((w) => w.scope !== 'embedded');
+    if (!library.length) {
+      body.appendChild(h('p', { class: 'muted' }, '只有角色内嵌书可用。内嵌书会随角色自动激活，不需要在这里挂载。'));
+      return;
+    }
+    if (!advanced) {
+      singleSelect = h('select', { class: 'field', 'aria-label': '主世界书' },
+        h('option', { value: '' }, '不额外挂载（只用卡内嵌书）'),
+        ...library.map((w) => h('option', { value: w.id }, `${w.name}${w.enabled === false ? '（已停用）' : ''}`)),
+      );
+      singleSelect.value = [...selected][0] || '';
+      body.append(
+        h('p', { class: 'muted small' }, '一个世界一本书。角色卡的内嵌书仍会随角色在场自动激活，不占这个名额。'),
+        h('div', { class: 'field-group' }, h('span', { class: 'field-label' }, '这一局的主世界书'), singleSelect),
+      );
+    } else {
+      const list = h('div', { class: 'world-mount__list' });
+      for (const w of library) {
+        const checked = selected.has(w.id);
+        const row = h('label', { class: 'world-mount__row' },
+          h('span', { class: 'switch' },
+            h('input', {
+              type: 'checkbox',
+              class: 'switch-input',
+              checked,
+              onchange: (event) => {
+                if (event.target.checked) selected.add(w.id);
+                else selected.delete(w.id);
+              },
+            }),
+            h('span', { class: 'switch__knob' }),
+          ),
+          h('span', { class: 'world-mount__name' }, w.name),
+          h('span', { class: 'muted small' }, w.enabled === false ? '已停用' : `${w.entries?.length || 0} 条`),
+        );
+        list.appendChild(row);
+      }
+      body.append(
+        h('p', { class: 'muted small' }, `已选 ${selected.size} 本，最多 8 本。同 key 冲突时按 order 大者后注入，组装预览会标出来。`),
+        list,
+      );
+    }
+    body.appendChild(
+      h('div', { class: 'settings-toggle world-mount__advanced' },
+        h('span', {}, h('strong', {}, '启用多本世界书'), h('span', { class: 'muted small' }, '高级选项，最多 8 本')),
+        h('span', { class: `switch${advanced ? ' is-on' : ''}` }, h('span', { class: 'switch__knob' })),
+      ),
+    );
+    const advancedSwitch = body.querySelector('.world-mount__advanced .switch');
+    advancedSwitch?.addEventListener('click', () => {
+      if (!advanced && selected.size > 1) selected = new Set([...selected].slice(0, 1));
+      advanced = !advanced;
+      draw();
+    });
+  }
+
+  repo.listWorlds().then((rows) => {
+    worlds = rows || [];
+    const libraryIds = new Set(worlds.filter((w) => w.scope !== 'embedded').map((w) => w.id));
+    selected = new Set([...selected].filter((id) => libraryIds.has(id)));
+    draw();
+  }).catch((err) => {
+    clear(body);
+    body.appendChild(h('p', { class: 'error-text' }, `读取世界书失败：${err.message}`));
+  });
+
+  return overlay;
+}
+

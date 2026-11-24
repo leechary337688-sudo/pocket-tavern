@@ -97,6 +97,7 @@ export function mount(el, ctx) {
       placeholder: '例如：雾港城设定集',
       confirmText: '创建',
       maxlength: 60,
+      helper: '一个世界一本书，角色私设嵌进卡。需要多本时，在群聊里显式开启高级选项。',
     });
     if (!name) return;
     try {

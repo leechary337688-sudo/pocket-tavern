@@ -6,7 +6,7 @@
 > 当前版本：`0.2.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布
 > 补丁 A/B：试穿只写 `trials` + contentHash 判重/查重合并；CCv3 内嵌书、挂载优先级与同 key 冲突高亮；群聊 natural_order。
 >
-> 安卓安装包（debug 签名，含补丁 A/B）：见 [Releases](https://github.com/leechary337688-sudo/pocket-tavern/releases/latest)。
+> 安卓安装包（debug 签名，含补丁 B v2）：见 [Releases](https://github.com/leechary337688-sudo/pocket-tavern/releases/latest)。
 > 在线预览（无需安装，GitHub Pages）：https://leechary337688-sudo.github.io/pocket-tavern/
 
 ---
@@ -187,6 +187,8 @@ Chrome Android：地址栏右侧菜单 →「添加到主屏幕」/「安装应�
 
 ## 五、世界书
 
+新建：世界书页右上「+」。默认遵循「**一个世界一本书，角色私设嵌进卡**」——一个会话挂 1 本主世界书；角色自己的设定优先做成卡内嵌书。
+
 条目字段：
 
 ```js
@@ -223,7 +225,7 @@ CCv3 角色卡可以带 `character_book`（卡内嵌世界书）：
 chat 会话显式挂载 > persona 人格 > character 卡内嵌书 > global 全局
 ```
 
-- 默认一个会话只挂 **1 本**主世界书；需要叠加时在群聊/世界书面板打开「启用多本世界书」，最多 8 本。
+- 默认一个会话只挂 **1 本**主世界书：单聊点顶栏「更多 → 世界书挂载」选一本；群聊在「群聊成员与规则 → 世界书挂载」里选。需要叠加时打开「启用多本世界书」，最多 8 本。
 - 同 key 跨书冲突时，`order` 大的条目后注入；组装预览的「同 key 冲突」会列出双方与生效者，命中条目带红色「同 key 冲突」标记。
 - 会话级显式挂载的书压过同 key 的卡内嵌书；内嵌书仍会参与，只是冲突时 order 决定注入顺序。
 
@@ -539,6 +541,8 @@ node dev/check-trial-discard-streaming.mjs
 node dev/check-cardbook-ui.mjs
 node dev/check-ptpack-book.mjs
 node dev/check-world-hash.mjs
+node dev/check-world-mount.mjs
+node dev/check-world-create.mjs
 node dev/check-preview-mounts.mjs
 ```
 
@@ -563,7 +567,7 @@ node dev/check-preview-mounts.mjs
 | 21 | 卡内嵌书随卡导出再导入；A 在场触发、A 不在场不触发 | ✅ | `check-patch-v2.mjs` 10/10：导出 ccv3 → 重导入 `scope=embedded`；A 在场命中「四海阁的私藏」，换卡后不命中 |
 | 22 | 群聊点名成员 B，下一条必定 B 发言 | ✅ | `check-patch-v2.mjs`、`check-group-ui.mjs`：`speaker=程墨白`；群聊引擎 natural_order |
 | 补 | 补丁 A：试穿只写 trials、转正幂等/判重、丢弃零残留、查重合并 | ✅ | `check-trial-conflict.mjs` 7/7、`check-dedupe.mjs` 11/11、`check-cardbook-ui.mjs` 10/10；`check-trial-discard-streaming.mjs` 5/5（流式中途丢弃 trial 不复活） |
-| 补 | 补丁 B：挂载优先级、同 key 冲突高亮、群聊成员/活跃度/内嵌书 | ✅ | `check-preview-mounts.mjs` 5/5、`check-group-ui.mjs` 10/10、`check-world-hash.mjs` 5/5 |
+| 补 | 补丁 B：挂载优先级、同 key 冲突高亮、群聊成员/活跃度/内嵌书 | ✅ | `check-preview-mounts.mjs` 5/5、`check-group-ui.mjs` 10/10、`check-world-hash.mjs` 5/5、`check-world-mount.mjs` 11/11 |
 
 补充：
 

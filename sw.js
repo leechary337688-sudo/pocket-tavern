@@ -1,5 +1,5 @@
 /* 袖珍酒馆 Service Worker — 只缓存同源应用壳；绝不缓存 API 响应、密钥或聊天内容。 */
-const VERSION = '0.2.7';
+const VERSION = '0.2.9';
 const CACHE = `pt-shell-v${VERSION}`;
 const SHELL = [
   './',

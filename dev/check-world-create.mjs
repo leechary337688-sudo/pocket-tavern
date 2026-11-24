@@ -1,0 +1,31 @@
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+process.env.NODE_PATH = 'C:/Users/石晓佳/.dsh/profiles/desktop/node_modules';
+require('module').Module._initPaths();
+const { chromium } = require('playwright-core');
+
+const BASE = process.env.PT_BASE || 'http://127.0.0.1:8788/';
+const EXE = 'C:/Users/石晓佳/AppData/Local/ms-playwright/chromium-1223/chrome-win64/chrome.exe';
+const browser = await chromium.launch({ executablePath: EXE });
+const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+const page = await context.newPage();
+const errors = [];
+page.on('pageerror', (e) => errors.push(String(e.stack || e)));
+await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+await page.evaluate(async () => {
+  const { Repo } = await import('/src/data/repo.js');
+  const repo = new Repo();
+  await repo.init();
+  await repo.saveSettings({ ageAck: true, onboardingDone: true });
+});
+await page.goto(BASE + '#/world', { waitUntil: 'networkidle' });
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+await page.locator('button[aria-label="新建世界书"]').click();
+await page.waitForTimeout(300);
+const overlay = page.locator('.overlay.is-open');
+const text = await overlay.innerText();
+console.log(text.includes('一个世界一本书') && text.includes('角色私设嵌进卡') ? 'PASS  新建世界引导语' : 'FAIL  新建世界引导语 — ' + text);
+await page.screenshot({ path: 'dev/new-world-guide.png' });
+console.log(errors.length ? 'FAIL pageerror — ' + errors.join(' | ') : 'PASS  无 pageerror');
+await browser.close();
