@@ -1,0 +1,11 @@
+{
+  "id": "dice-log",
+  "name": "骰子记录",
+  "version": "1.0.0",
+  "author": "PocketTavern",
+  "description": "把每一次掷骰写进本地记录，并提供快捷投掷。",
+  "entry": "plugin.js",
+  "minAppVersion": "0.1.0",
+  "permissions": ["storage"],
+  "icon": "🎲"
+}

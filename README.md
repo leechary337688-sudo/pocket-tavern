@@ -1,0 +1,628 @@
+# 袖珍酒馆 · PocketTavern
+
+一个移动优先、安装即用的 SillyTavern 风格单页 PWA：角色卡聊天、世界书、多后端流式接入、本地插件系统，以及可自托管的创意工坊。
+原生 ES2022 + ESM，**开发态免构建**；数据只留在这台设备的 IndexedDB；没有遥测，也不会把内容发去你配置的后端之外。
+
+> 当前版本：`0.2.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布
+> 补丁 A/B：试穿只写 `trials` + contentHash 判重/查重合并；CCv3 内嵌书、挂载优先级与同 key 冲突高亮；群聊 natural_order。
+>
+> 安卓安装包（debug 签名，含补丁 A/B）：见 [Releases](https://github.com/leechary337688-sudo/pocket-tavern/releases/latest)。
+
+---
+
+## 一、30 秒启动
+
+### 方式 A：带本地 mock 后端（推荐先这样看）
+
+```bash
+git clone https://github.com/leechary337688-sudo/pocket-tavern.git
+cd pocket-tavern
+node dev/mock-server.mjs
+```
+
+打开 `http://127.0.0.1:8788/`。
+
+mock 同时伺服静态文件和 OpenAI 兼容接口，不会联网：
+
+| 设置项 | 值 |
+|---|---|
+| 接口类型 | OpenAI 兼容 |
+| 后端地址 | `http://127.0.0.1:8788` |
+| 模型 | `amber-mock`（或 `amber-mock-wild`） |
+| API 密钥 | 任意非空字符串，如 `dev-key` |
+
+`amber-mock-wild` 会在 temperature > 1.2 时给出更发散的文本，方便验收 #4。
+
+### 方式 B：接自己的 OpenAI 兼容端点
+
+```bash
+# 任意静态服务器都可以；不要用 file:// 打开（ESM 和 SW 会被浏览器拦住）
+python -m http.server 8788 --bind 127.0.0.1
+```
+
+设置 → 后端连接 → 填 `endpoint`、`model`、`apiKey` → 保存 → 回聊天页发送。
+
+> 浏览器直连第三方 API 会受 CORS 限制；如果服务端不允许跨域，需要自己在同源反代一层。
+> 本项目**不内置、不索要、不记录任何真实密钥**。
+
+### 安装到主屏幕
+
+Chrome Android：地址栏右侧菜单 →「添加到主屏幕」/「安装应用」。
+需要 `http://localhost` 或 HTTPS；局域网 IP 的 HTTP 页面浏览器不会给 Service Worker 权限。
+
+---
+
+## 二、目录结构
+
+```text
+.
+├── index.html                 # 应用壳 + 启动屏
+├── manifest.webmanifest       # PWA 清单（standalone / 图标 / 快捷方式）
+├── sw.js                      # 应用壳 precache + 离线导航回退
+├── icons/                     # 512/192/maskable/apple-touch/favicon + logo.svg
+├── plugins/
+│   ├── index.json             # 本地插件索引（插件市场默认读它）
+│   ├── token-counter/         # 示例插件 1：上下文占用面板
+│   │   ├── manifest.json
+│   │   └── plugin.js
+│   └── dice-log/              # 示例插件 2：骰子记录
+│       ├── manifest.json
+│       └── plugin.js
+├── src/
+│   ├── main.js                # 路由、启动、主题、引导、设置装配
+│   ├── core/                  # 不依赖 UI 的纯逻辑
+│   │   ├── api-client.js      # OpenAI/Claude/Gemini/Kobold/Tabby + SSE + 重试
+│   │   ├── sse-parser.js      # 按 data: 行解析 SSE
+│   │   ├── prompt-builder.js  # 预算、宏、世界书扫描、组装 trace
+│   │   ├── mount-resolver.js  # chat>persona>character>global 挂载与同 key 冲突
+│   │   ├── group-scheduler.js # 群聊点名/活跃度掷骰/round-robin/director
+│   │   ├── chat-engine.js     # 会话状态机、流式、swipe、删除撤销、续写、群聊回合
+│   │   ├── card-codec.js      # PNG tEXt / JSON 角色卡
+│   │   ├── sampler.js         # 采样默认值与夹取
+│   │   ├── tokenizer-lite.js  # 轻量估算（中文按字、拉丁按 4 字符）
+│   │   └── dice-engine.js     # /roll 表达式
+│   ├── data/
+│   │   ├── db.js              # IndexedDB pt-db（v2，含 trials）
+│   │   ├── repo.js            # 仓储门面、备份、快照、contentHash/查重合并
+│   │   ├── content-hash.js    # 卡/世界书规范化 SHA-256 内容哈希
+│   │   └── seed.js            # 内置琥珀卡/世界书/设置
+│   ├── ext/
+│   │   ├── bus.js             # 事件总线（监听器异常隔离）
+│   │   ├── stlite.js          # 插件唯一宿主 API（权限清单制）
+│   │   └── loader.js          # manifest 校验、动态 import、启停
+│   ├── workshop/
+│   │   ├── ai-gen.js          # AI 生成卡/世界书、字段级重生
+│   │   ├── packer.js          # 零依赖 store-only .ptpack（zip + manifest）
+│   │   ├── registry.js        # 演示源 / 远程源 / 本地发布 / 安装记录
+│   │   └── trial-sandbox.js   # 3 条试聊沙盒；转正才写库
+│   ├── ui/
+│   │   ├── chat-view.js       # 聊天页 + 消息窗口化 + 手势 + 组装预览
+│   │   ├── card-library.js    # 卡库网格/列表/搜索/tag/导入导出
+│   │   ├── worldbook-view.js  # 世界书与条目编辑
+│   │   ├── settings-view.js   # 右侧设置抽屉
+│   │   ├── home-view.js       # 首页会话列表
+│   │   ├── group-view.js      # 开群聊 / 成员、活跃度、世界书与发言模式
+│   │   ├── workshop-view.js   # 工坊瀑布流/搜索/详情/试穿/导入
+│   │   ├── gen-view.js        # AI 生成器（卡 / 世界书表格）
+│   │   ├── publish-view.js    # 发布三步：打包 → 分级确认 → 上传/导出
+│   │   ├── dice.js            # 280×320 骰子弹窗 + 撒花
+│   │   ├── sound.js           # Web Audio 程序合成 + TTS
+│   │   ├── overlay.js         # 通用弹层/action sheet/confirm/prompt
+│   │   ├── toast.js
+│   │   ├── icons.js           # 内联 SVG 图标
+│   │   └── dom.js             # h()/工具
+│   └── styles/app.css         # 深夜酒馆 / 白天小酒馆
+└── dev/                       # 仅开发/验收用，不属于运行时
+    ├── mock-server.mjs        # 本地静态 + OpenAI 兼容 SSE
+    ├── check-*.mjs            # 自动验收脚本
+    └── *.png                  # 巡检截图
+```
+
+约定：
+
+- `core/` 不 import `ui/`，也不碰 DOM。
+- `ui/` 组件统一 `mount(el, ctx) → { unmount }`。
+- 插件只能经 `STLite` 访问宿主；不能直接 import 宿主模块。
+- 运行时零依赖、零打包；`dev/` 才使用 Node 和 Playwright。
+
+---
+
+## 三、数据与隐私
+
+### IndexedDB：`pt-db`（version 2）
+
+| store | key | 内容 |
+|---|---|---|
+| `cards` | `id` | 角色卡（name/description/personality/scenario/first_mes/mes_example/creator/tags/avatar…） |
+| `chats` | `id` | 会话与消息（索引：cardId、updatedAt；群聊含 kind/memberIds/worldIds/memberState） |
+| `worlds` | `id` | 世界书与条目（`scope: library|embedded`、`embeddedFor`、`contentHash`） |
+| `settings` | `key` | 单条 `app` 设置（连接、采样、提示词、声音、插件启停、UI 状态） |
+| `personas` | `id` | 用户人格 |
+| `trials` | `id` | **试穿沙盒**（不写 cards/worlds/chats；索引：contentHash、kind、updatedAt） |
+| `extdata` | `id` | 插件命名空间数据 + `__app` 快照（索引：pluginId） |
+
+### localStorage
+
+只存两个 UI 态：
+
+- `pt:theme`：`dark` / `light`
+- `pt:lastChat`：最近会话 id
+
+### 密钥与网络
+
+- apiKey 存在本机 `settings`，不写日志、不写备份（默认）、不进插件 API。
+- 插件拿到的 `STLite.settings` 是脱敏后的冻结副本；没有明文 apiKey。
+- 只有你配置的端点会收到聊天内容；没有分析/遥测/第三方字体/远程图片。
+- 跨域 API 响应**不进 Service Worker 缓存**。
+
+### 备份与快照
+
+设置 → 数据与备份：
+
+- 导出 JSON：默认脱敏（`includesKeys=false`），可勾选包含密钥。
+- 导入 JSON：覆盖式恢复 cards / chats / worlds / settings / personas / extdata。
+- 每日自动快照：保留最近 7 份，可单份恢复。
+- 危险区「清空并恢复演示数据」会重建内置内容。
+
+---
+
+## 四、角色卡
+
+支持导入：
+
+- **PNG 角色卡**：读 `tEXt` / `iTXt` / `zTXt` 的 `ccv3` 或 `chara` 块，base64 → UTF-8 JSON。
+- **JSON**：SillyTavern V1 扁平结构，或 V2/V3 的 `{ spec, data: {...} }`。
+- 兼容字段：`name / description / personality / scenario / first_mes / mes_example / creator / tags / avatar / system_prompt / post_history_instructions / alternate_greetings`。
+
+导出：
+
+- PNG（512×768 卡面，写入 `chara` 文本块）——SillyTavern 可回读。
+- JSON。
+- 卡库支持网格/列表、tag 过滤、搜索、编辑、删除、开始新聊天。
+
+演示卡「琥珀」在首次启动时自动写入；删除后可从设置的危险区恢复演示数据。
+
+---
+
+## 五、世界书
+
+条目字段：
+
+```js
+{
+  uid, key: [], keysecondary: [], comment, content,
+  position: 'before' | 'after', order, tokenBudget,
+  recursive, selective, constant, probability: 0-100,
+  caseSensitive, useRegex, enabled
+}
+```
+
+扫描规则（`src/core/prompt-builder.js`）：
+
+- 最多 **2 层**：第 1 层用用户输入 + 最近 2 条消息做种子；只有 `recursive: true` 的命中条目内容会进入第 2 层。
+- 默认大小写不敏感子串匹配；`useRegex` 时可写正则；`caseSensitive` 生效。
+- `selective` + `keysecondary` 需要主键与副键同时命中。
+- `constant` 无条件注入（受常量预算限制）。
+- `probability` 按百分比随机；`tokenBudget` 是单条上限。
+- 同一 `worldId:uid` 在一次组装里只命中一次；顺序按 `order`。
+- 命中内容在预览页显示「第几层、命中哪个 key、注入到 before/after、实际 token」。
+
+### 5.1 卡内嵌书与挂载优先级
+
+CCv3 角色卡可以带 `character_book`（卡内嵌世界书）：
+
+- 导入 PNG/JSON 时写入卡对象并同步成一本 `scope:'embedded'` 的世界书，`character_book_id` 指回去。
+- 导出时：有内嵌书的卡写 `ccv3` 块（`data.character_book`），没有则仍写 `chara`。
+- 内嵌书**只有这张卡在聊天/群聊里时才挂载**；卡不在场，条目不触发。群聊里每位在场角色各带自己的内嵌书，**不占主会话的世界书名额**。
+- 卡库 → 卡详情 → 编辑 → 「卡内嵌世界书」可改书名、条目 key/正文；保存会同步 `worlds` 里的嵌入态记录。
+
+组装时的挂载优先级（高 → 低）：
+
+```text
+chat 会话显式挂载 > persona 人格 > character 卡内嵌书 > global 全局
+```
+
+- 默认一个会话只挂 **1 本**主世界书；需要叠加时在群聊/世界书面板打开「启用多本世界书」，最多 8 本。
+- 同 key 跨书冲突时，`order` 大的条目后注入；组装预览的「同 key 冲突」会列出双方与生效者，命中条目带红色「同 key 冲突」标记。
+- 会话级显式挂载的书压过同 key 的卡内嵌书；内嵌书仍会参与，只是冲突时 order 决定注入顺序。
+
+### 5.2 群聊与 natural_order
+
+卡库顶栏「开一桌群聊」→ 选至少 2 位成员 → 开桌。
+
+- 默认 `natural_order`：用户输入里出现成员全名就**必须**由该成员接话；没有点名时按每位成员的 `talkativeness`（0–1，默认 0.5）掷骰决定谁接，可能没人接（会提示可以点名）。
+- 保留 `round_robin`（轮流）、`director`（每轮固定顺序）、`mention`（只回应被点名者）。
+- `allow_self_responses` 默认关；开启后同一角色可连续发言。
+- 群聊每轮最多 3 个角色发言，消息记录 `speaker`/`cardId`，头像与名字按发言人显示。
+- 群聊顶栏「群聊成员与规则」可改标题、成员、活跃度、世界书与发言模式。
+
+---
+
+## 六、Prompt 组装与预算
+
+入口：聊天页右上「组装预览」按钮。
+
+分区顺序：
+
+1. 系统提示（角色扮演约束 + 用户自定义 system + 内容分级 + 临时 `/sys`）
+2. 世界书常量
+3. 角色卡（描述 + 人格 + 场景 + 示例对话）
+4. 世界书触发 before
+5. 世界书触发 after
+6. 最近聊天记录（倒序取，按时间正序发）
+7. 用户输入 + EOS
+
+预算比例：系统 10% / 世界书常量 5% / 角色卡 35% / 世界书触发 25% / 聊天记录 20%。
+
+**预算基数的口径**：不是直接拿 `context_window` 乘百分比，而是：
+
+```text
+available = max(512, context_window - reserveOutput)
+reserveOutput = min(max_tokens, floor(context_window / 2))
+```
+
+默认 `context_window=8192`、`max_tokens=2048`，所以可用组装预算为 `6144`；输出预留 `2048`。
+这样比直接按 8192 分配更保守，避免请求超窗。
+
+超限时：
+
+- 先逐条丢最旧的聊天记录；
+- 仍超限则依次压缩 after → before → 世界书常量 → 角色卡 → 系统提示；
+- 组装预览会列出 `dropped` 和每个分区的实际 token。
+
+---
+
+## 七、后端接入
+
+连接配置：
+
+```js
+{
+  endpoint: 'http://127.0.0.1:8788',
+  apiType: 'openai' | 'claude' | 'gemini' | 'kobold' | 'tabby',
+  apiKey: '',
+  model: 'amber-mock',
+  extraHeaders: {}
+}
+```
+
+| apiType | 聊天请求 | 拉模型 |
+|---|---|---|
+| `openai` / `tabby` | `POST {endpoint}/v1/chat/completions` (`stream:true`) | `GET {endpoint}/v1/models` |
+| `claude` | `POST {endpoint}/v1/messages` | `GET {endpoint}/v1/models` |
+| `gemini` | `POST {endpoint}/v1beta/models/{model}:streamGenerateContent?alt=sse` | `GET {endpoint}/v1beta/models` |
+| `kobold` | `POST {endpoint}/api/extra/generate/stream` | `GET {endpoint}/api/v1/model` |
+
+- SSE 按 `data:` 行解析；兼容非 SSE 的一次性 JSON。
+- 30s 空闲超时；只有在**尚未收到任何 token**时才指数退避重试 2 次（500ms/1000ms + jitter）。
+- 采样默认：temperature 0.7 / top_p 0.9 / top_k 40 / min_p 0.05 / rep_pen 1.1 / presence 0 / frequency 0 / seed -1 / max_tokens 2048 / context_window 8192。
+- 错误的 `apiKey` / `secret` / `Bearer` 会被 `redact()` 替换，不进入 UI 错误文本。
+
+---
+
+## 八、插件开发
+
+### 8.1 目录与 manifest
+
+```text
+plugins/<id>/
+├── manifest.json
+└── plugin.js
+```
+
+```json
+{
+  "id": "my-plugin",
+  "name": "我的插件",
+  "version": "1.0.0",
+  "author": "you",
+  "description": "一句话说明",
+  "entry": "plugin.js",
+  "minAppVersion": "0.1.0",
+  "permissions": ["storage"]
+}
+```
+
+- 目录名必须等于 `id`；`entry` 相对插件目录。
+- 当前所有入口都必须是 ESM；加载器用 `import('/plugins/<id>/<entry>?v=<version>')`，所以升级版本即刷新。
+- `permissions` 只能是 `storage` / `network` / `tts`。
+- `minAppVersion` 高于当前 `0.1.0` 会拒绝加载。
+- 插件要出现在设置里，需要写进 `/plugins/index.json` 的 `plugins` 数组（或由市场索引发现；远程安装尚未实现）。
+
+### 8.2 插件模块
+
+```js
+export default {
+  async init(STLite) {
+    STLite.ui.registerPanel({
+      icon: '📊',
+      title: '我的面板',
+      render(el) {
+        el.textContent = `当前 ${STLite.chat.getMessages().length} 条消息`;
+      },
+    });
+
+    STLite.eventSource.on('chat:messageReceived', ({ message }) => {
+      // message 是副本，改它不会改宿主消息
+      console.log('收到新回复', message.id);
+    });
+  },
+
+  unload() {
+    // 可选；注册的面板/快捷回复会由宿主清理，定时器/外部监听要自己清
+  },
+};
+```
+
+`init` 抛错只会隔离该插件（toast + 设置里显示错误），不会中断主程序。
+每个插件的 `unload`、注册的 panel/quickReply 和 `eventSource` 监听都会在禁用时清理；**插件自己的 `setInterval` / `addEventListener` 必须在 `unload` 里清掉**。
+
+### 8.3 事件清单
+
+| 事件 | payload | 触发时机 |
+|---|---|---|
+| `app:ready` | `{ version, plugins }` | 启动完成、插件加载后 |
+| `chat:promptReady` | `{ chatId, prompt, trace, card }` | 每次请求前；`prompt` 是可直接修改的 messages 数组 |
+| `chat:messageSent` | `{ chatId, message }` | 用户消息已写入 |
+| `chat:messageReceived` | `{ chatId, message, usage }` | 角色回复完成 |
+| `chat:generateAfter` | `{ chatId, message }` | 回复完成、落库后 |
+| `chat:messageEdited` | `{ chatId, message }` | 消息编辑保存后 |
+| `chat:changed` | `{ chatId, chat }` | 会话结构变化（新增/删除/切换 swipe/fork 等） |
+
+`chat:promptReady` 是唯一允许插件**改请求**的钩子：
+
+```js
+STLite.eventSource.on('chat:promptReady', ({ prompt }) => {
+  prompt.push({ role: 'system', content: '记得用中文回答。' });
+});
+```
+
+注意：改坏了由插件自己负责；宿主不会回滚。
+
+### 8.4 宿主 API
+
+| API | 说明 |
+|---|---|
+| `STLite.eventSource.on/off(event, handler)` | 只接受上表 7 个事件；插件不能 `emit` |
+| `STLite.chat.getMessages()` | 当前会话消息的浅拷贝（含 swipes） |
+| `STLite.chat.getChatInfo()` | 当前会话元信息 |
+| `STLite.chat.getState()` | `idle` / `streaming` / `paused` / `error` |
+| `STLite.chat.getLastPromptTrace()` | 最近一次组装 trace 的深冻结副本 |
+| `STLite.character` | 当前角色卡只读深冻结副本；无会话时为 `{}` |
+| `STLite.settings` | 脱敏设置只读深冻结副本（无 apiKey 明文） |
+| `STLite.storage(id?)` | 插件自己的 IndexedDB 命名空间；未声明 `storage` 则全部 reject；不能访问别的插件 |
+| `STLite.ui.registerPanel({icon,title,render(el)})` | 注入设置页「插件面板」；返回注销函数 |
+| `STLite.ui.registerQuickReply({label,onTap})` | 注入聊天快捷栏；最多显示 4 个，多出归「更多」 |
+| `STLite.ui.toast(message)` | 宿主 toast |
+| `STLite.dice.roll('1d100+5')` | 与 `/roll` 同一个骰子引擎 |
+| `STLite.tokenizer.estimate(text)` | 轻量 token 估算 |
+| `STLite.tts.speak(text, opts)` | 需 `tts` 权限；否则抛错 |
+| `STLite.net.fetch(...)` | **仅当声明 `network` 时存在**；直通浏览器 fetch，宿主不代理、不加密钥 |
+
+### 8.5 边界与审计
+
+- 这是 **API 层权限清单制，不是 JS 沙箱**。插件代码仍然运行在同源主线程，第三方插件必须自己审计源码。
+- 不给插件明文 apiKey；`settings` 是脱敏副本。
+- 插件不应该查询/修改宿主其它 DOM 节点；`registerPanel` 的 `el` 是它唯一该渲染的区域。
+- 未声明 `network` 时 `STLite.net` 根本不存在；声明了也只受浏览器 CORS 约束。
+- 插件不能主动 emit 宿主事件，不能访问别的插件 storage。
+- 设置页的「插件市场」默认读本地 `/plugins/index.json`；可填远程索引 URL **只展示条目**，远程安装明确未实现。
+
+### 8.6 示例插件
+
+- `plugins/token-counter/plugin.js`：每 1200ms 读 `chat.getMessages()`、`getLastPromptTrace()`、`settings`，画占用/预算/分区/世界书命中；禁用时清 interval。
+- `plugins/dice-log/plugin.js`：用 `storage` 存最近 30 次掷骰；注册快捷栏 `🎲 d20`；面板可掷 d20/d100、清空记录。
+
+两个插件都只声明 `storage`，不联网。
+
+---
+
+## 九、创意工坊
+
+入口：首页「创意工坊」按钮，或 `#/workshop`（manifest 也有快捷方式）。
+生成器：工坊右上 `✦`，或 `#/workshop/gen`。设置抽屉的「创意工坊」卡负责远程源、生成模型/温度/语言。
+
+### 9.1 AI 生成器
+
+走**当前已配置的后端连接**（设置 → 后端连接），不另存密钥；可以只给生成器换一个模型：
+
+- 角色卡：一句想法（≤100 字）→ 严格 JSON（name / description / personality / scenario / first_mes / mes_example / tags）。
+- 字段级重生：字段卡左滑，或点字段旁的「重生」；只重写该字段，其他字段不动。
+- 世界书：粘贴设定（≤2000 字）→ 5–15 条，表格编辑 comment / key / content；重复或空 key 红色高亮；拖 `⠿` 排序；单条 content 写入前按 200 token 截断。
+- 生成温度默认 0.9，可调 0.5–1.2；语言可跟随输入，或固定中文/English。
+- 生成结果只是草稿，**不会自动入库**。卡点「转正」才写卡库并建正式会话；世界书点「存入世界书」才写库。
+
+### 9.2 试穿沙盒
+
+工坊详情 →「试穿 · 开 3 条试聊」：
+
+1. 自动放入卡的 `first_mes`；
+2. 自动发一条用户试探；
+3. 用当前连接生成一条角色回复。
+
+试聊状态只写 IndexedDB 的独立 `trials` store，**不写 cards / chats / worlds**；同一个试穿记录反复切字段/发消息也只更新这一条 trial。
+「转正」是唯一实体化入口：先按 `contentHash`（SHA-256 前 16 位）查重——同 hash 直接复用已有卡/书并绑定；同名但不同 hash 会弹「已存在同名世界书《X》」，让你选「复用旧的」或「并存为《X(2)》」。转正按钮幂等，重复点不会重复建卡/书/会话。
+「丢弃，零残留」只删 trial 记录，正式库一条不动。
+
+设置 → 数据 →「查重合并」可列出现存同 hash / 同名的世界书，选择保留本后一键把被删记录绑定的会话、卡的 `character_book_id` 与内嵌内容改绑到保留记录。世界书列表每条显示 `#hash`、绑定会话数与「嵌卡/馆藏」。
+
+### 9.3 .ptpack 格式
+
+`.ptpack` 是 **store-only zip**（不压缩、零依赖），内含：
+
+```text
+manifest.json
+card.json      # type=card|bundle
+world.json     # type=world|bundle
+```
+
+```json
+{
+  "format": "ptpack",
+  "type": "card | world | bundle",
+  "id": "pt-card-...",
+  "title": "作品标题",
+  "version": "1.0.0",
+  "author": "作者",
+  "tags": ["tag"],
+  "contentRating": "general | mature",
+  "changelog": "首个版本。",
+  "description": "简介",
+  "files": ["manifest.json", "card.json"],
+  "createdAt": "2026-11-23T..."
+}
+```
+
+打包器只写白名单字段；不会带 apiKey、设置、聊天记录。
+卡有内嵌书时，`card.json` 会带 `character_book`（name + 条目），导入端重新生成嵌入态世界书；不会带原卡的 `character_book_id`。
+读取时拒绝路径穿越、压缩条目和流式 zip 条目。
+
+### 9.4 自托管工坊端点
+
+设置 → 创意工坊 → 自托管端点，例如 `https://workshop.example.com`。
+客户端只发作品查询/发布，**不带 API Key、不带账号**（客户端没有账号体系）：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/list?type=card&q=&sort=new` | `{ items: [...] }`；`sort` 支持 `new` / `hot` / `rating` |
+| `GET` | `/api/item/:id` | `{ item: {...} }` |
+| `POST` | `/api/publish` | body 是 `.ptpack` 的 `application/zip`；返回 `{ item: {...} }` |
+
+Item 至少包含 `id/type/title/author/tags/version/contentRating/cover?/rating/downloads`；`card` / `world` 可随列表或详情返回。
+远程失败（超时、CORS、离线）不会抛到页面：回退到本地缓存 + 内置演示 + 本地发布，并显示离线提示。
+关闭「启用远程工坊源」后完全走本地；关掉「显示内置演示源」则只剩缓存/本地发布。
+
+### 9.5 浏览、导入与更新
+
+- 两列瀑布流，搜索标题/作者/描述/tag，按类型、tag、`new/hot/rating` 过滤，18+ 默认隐藏。
+- 详情可「直接导入」：卡/世界书写入本地库，并记录 `{id, version}` 到 `__workshop` 的 extdata。
+- 再次打开同一作品，若远程版本更高，按钮显示「更新到本地」；版本比较用数值段。
+- 详情可「导出 .ptpack」，下载当前作品。
+
+### 9.6 明确边界
+
+- 远程安装的是**作品数据**，不是插件代码；插件安装仍是另一套 `/plugins` 机制。
+- 评分/下载量只读展示；客户端没有评分写入口，也不伪造数字。
+- 本地发布存 extdata `__workshop/state`，不会自动上传；只有配了远程端点并点「发布到远程工坊」才发网络请求。
+- `.ptpack` 只支持 store 模式；第三方压缩工具重新压过的 zip 会被拒绝（明确报错）。
+
+---
+
+## 十、验收结果
+
+自动脚本都在 `dev/`，需要先启动 mock：
+
+```bash
+node dev/mock-server.mjs
+node dev/check-pwa.mjs
+node dev/check-installable.mjs
+node dev/check-backup.mjs
+node dev/check-resume.mjs
+node dev/check-stress.mjs
+node dev/check-swipe-delete.mjs
+node dev/audit-taps.mjs
+node dev/check-workshop.mjs
+node dev/check-ws-import.mjs
+node dev/check-ws-settings.mjs
+node dev/check-ws-320.mjs
+node dev/check-gen.mjs
+node dev/check-world-gen.mjs
+node dev/check-publish-320.mjs
+node dev/check-ws-offline.mjs
+node dev/check-ws-remote.mjs
+node dev/check-patch-v2.mjs
+node dev/check-group-ui.mjs
+node dev/check-dedupe.mjs
+node dev/check-trial-conflict.mjs
+node dev/check-trial-discard-streaming.mjs
+node dev/check-cardbook-ui.mjs
+node dev/check-ptpack-book.mjs
+node dev/check-world-hash.mjs
+node dev/check-preview-mounts.mjs
+```
+
+| # | 验收项 | 状态 | 证据 |
+|---|---|---|---|
+| 1 | 添加到主屏后独立窗口、图标、启动页 | ✅ | `check-installable.mjs`：非隐身持久化 profile 下 `installabilityErrors=[]`，manifest 无解析错误；实际「安装」按钮需在浏览器 UI 里人工点一次 |
+| 2 | 导入 PNG ccv2，字段/头像完整 | ✅ | `dev/fixtures/test-ccv2.png` 导入后 1→2 张卡，头像/描述/tags/开场白完整 |
+| 3 | 本地 OpenAI 兼容端点流式、打字机光标 | ✅ | mock SSE，手动发送完成；`dev/shot-chat.png` 等 |
+| 4 | temperature=1.5 发散且重启保留 | ✅ | 设置滑杆改 1.5，reload 后仍 1.5；mock wild 更发散 |
+| 5 | key=酒馆 命中，组装预览可见注入 | ✅ | 预览显示「酒馆环境 / 琥珀的酒馆 / 113 tok / 已注入」 |
+| 6 | 删除中间消息「含后续」+5s 撤销 | ✅ | 5→1 条，撤销条 5s，撤销 1→5 |
+| 7 | swipe 第 3 条切回第 1 条不串 | ✅ | 3/3 → 1/3 → 3/3，文本与最初一致 |
+| 8 | token-counter 启停面板出现/消失 | ✅ | 开关停用后面板消失，再启用恢复 |
+| 9 | 备份导出再导入一致（密钥可选） | ✅ | `check-backup.mjs` 输出 `BACKUP OK` |
+| 10 | 后台 30s 断流回前台续播/提示 | ✅ | `check-resume.mjs` 输出 `RESUME OK`；隐藏态 3 次失败→已暂停→可见后第 4 次补全 |
+| 11 | Lighthouse PWA 全过 + 飞行模式刷新 | ✅ | Lighthouse 11.7.1 PWA 得分 100；`check-pwa.mjs` 输出 `PWA OK`，报告 `dev/lighthouse-pwa.json` |
+| 12 | 连发 20 条滚动流畅 | ✅（用 120 条压测） | `check-stress.mjs`：p95 帧间隔 7.1ms，窗口化只挂 26 条 |
+| 13 | 生成卡 7 字段；重生 first_mes 仅该字段变化 | ✅ | `check-gen.mjs`：`fieldCount=7`、`draftName=失忆的海盗船长`、`changedFields=["first_mes"]` |
+| 14 | 试聊 3 条转正入库并开会话；丢弃零残留 | ✅ | `check-workshop.mjs`：丢弃前后均 1 卡/1 聊；转正后 2 卡/2 聊并跳 `#/chat/...` |
+| 15 | 发布 .ptpack 后工坊可搜到并试穿；离线可用 | ✅ | `check-gen.mjs` 导出 1733B `.ptpack` 并回读 manifest/card，本地发布后列表可见且可试穿；`check-ws-remote.mjs` 远程发布/列表；`check-ws-offline.mjs` 离线仍显示 3 件演示作品 |
+| 16 | 关闭远程源后 AI 生成仍走本地端点 | ✅ | 生成/试穿/发布全程 `workshop.remoteEnabled=false` + 本地 mock；`check-gen.mjs`、`check-workshop.mjs` 均无远程请求错误 |
+| 21 | 卡内嵌书随卡导出再导入；A 在场触发、A 不在场不触发 | ✅ | `check-patch-v2.mjs` 10/10：导出 ccv3 → 重导入 `scope=embedded`；A 在场命中「四海阁的私藏」，换卡后不命中 |
+| 22 | 群聊点名成员 B，下一条必定 B 发言 | ✅ | `check-patch-v2.mjs`、`check-group-ui.mjs`：`speaker=程墨白`；群聊引擎 natural_order |
+| 补 | 补丁 A：试穿只写 trials、转正幂等/判重、丢弃零残留、查重合并 | ✅ | `check-trial-conflict.mjs` 7/7、`check-dedupe.mjs` 11/11、`check-cardbook-ui.mjs` 10/10；`check-trial-discard-streaming.mjs` 5/5（流式中途丢弃 trial 不复活） |
+| 补 | 补丁 B：挂载优先级、同 key 冲突高亮、群聊成员/活跃度/内嵌书 | ✅ | `check-preview-mounts.mjs` 5/5、`check-group-ui.mjs` 10/10、`check-world-hash.mjs` 5/5 |
+
+补充：
+
+- 运行时 JS（`src/` + `plugins/`，共 39 个文件）实测 raw 510.3KB / gzip 163.2KB，满足首屏 JS gzip < 300KB。
+- 320 / 360 / 390 / 430 宽均无横向滚动（`overflow=0`）；320 下快捷栏自动折成两行。
+- 触达审计：首页/卡库/世界书/聊天/设置/工坊/生成器全部 0 个 <44×44。
+- 会话列表右滑删除：`check-swipe-delete.mjs` 输出 `SWIPE DELETE OK`（右滑 96px 露出删除，确认后删掉）。
+- 离线刷新：`PWA OK`，截图 `dev/pwa-offline.png`。
+- Lighthouse：`npx --yes lighthouse@11.7.1 http://127.0.0.1:8788 --only-categories=pwa --chrome-path=<Chrome> --chrome-flags="--headless=new --no-sandbox"`，PWA 得分 **100**，原始报告 `dev/lighthouse-pwa.json`。
+
+---
+
+## 十一、已知限制 / 明确未实现
+
+- **Lighthouse PWA 已在交付机跑过（11.7.1，得分 100）**；真实「添加到主屏幕」仍需你在非隐身 Chrome 里点一次（CDP `installabilityErrors=[]`）。
+- **群聊是顺序发言**：每轮最多 3 位角色依次生成（不是并行/同屏抢话）；`natural_order` 的点名规则只匹配成员名全词，昵称/代词不触发。
+- **内容哈希判重是“内容级”的**：字段完全相同的内嵌书/世界书会按设计合并；确实要保留两个一模一样的世界书时，得改一个字段再另存。
+- **旧幽灵副本不自动删**：v0.2 已修新导入；历史遗留的同名副本请在「设置 → 数据 → 查重合并」里手动合并，删前会展示绑定会话数。
+- **远程插件安装未实现**：市场只读本地/远程 JSON 索引，不会下载代码；设置页有明确文案。
+- **浏览器直连 API 受 CORS 限制**；没有内置代理，因为「不向配置端点之外传数据」。
+- **TTS 依赖系统语音**：`speechSynthesis` 没有 zh-CN 音色时只会 toast，不会假装朗读。
+- **窗口化估算**：>100 条时用估算高度撑滚动条，日期分隔头高度未单独计入估算；滚动中可能有几像素抖动，不影响功能。
+- **图片消息**只预留了 12px 圆角样式，当前消息模型是纯文本 + swipe；没有做图片上传/多模态。
+- **分支**是复制式 fork（不是共享引用的树）；fork 后两边独立。
+- **单聊 500 条**上限：达到后发送会提示先归档/导出；不做自动删除。
+- **每日快照**在启动时检查，不是后台定时器；当天没打开应用就不会产生新快照。
+- **插件 API 不是安全沙箱**：权限是 API 层清单制，第三方插件仍需审计。
+- **创意工坊端点要自建**：客户端只定义 `/api/list`、`/api/item/:id`、`/api/publish` 契约；没有内置公网服务，也没有账号/评分写入口。
+- **`dev/mock-server.mjs` 的工坊数据只在内存**：重启进程后远程发布的作品消失；正式端点请持久化。
+- **.ptpack 只支持 store 模式**：第三方工具重压缩过的 zip 会被明确拒绝；这是为了避免引入解压依赖。
+- **AI 生成质量取决于模型**：严格 JSON 靠提示词约束，模型不听话时会报「JSON 解析失败」，重试或换模型即可。
+- **试穿沙盒不做多轮长上下文**：3 条自动试聊 + 手动追加；丢弃即销毁，不参与正式预算统计。
+
+---
+
+## 十二、开发备注
+
+- 改源码后如果浏览器还跑着旧版：DevTools → Application → Service Workers → Unregister，清 `pt-shell-*` 缓存；或把 `sw.js` 顶部 `VERSION` 加一。
+- 所有 JS 可做语法检查：
+
+```bash
+node --check src/main.js
+node --check src/core/*.js
+node --check src/ui/*.js
+node --check src/ext/*.js
+```
+
+- 真实密钥不要写进 `dev/`、截图、README 或任何提交。
+- `dev/mock-server.mjs` 只用于本地验收，监听 `127.0.0.1`；不要暴露到公网。
+
+---
+
+## 十三、设计口径速查
+
+- 背景 `#17110D`，卡片 `#221A14`，正文 `#EFE6DA`，次级 `#A8988A`，琥珀 `#E8A33D`，危险 `#C94F3D`。
+- 用户气泡 `#3A2C1E`、角色气泡 `#2A2119`；气泡最大宽 78%，圆角 16，尾巴 8。
+- 顶栏 56px + `backdrop-filter: blur(12px)`；快捷栏/输入栏触达 ≥44。
+- 设置抽屉宽 85%、最大 360px；骰子弹窗 280×320、圆角 24。
+- 字体只用系统中文栈，不请求远程字体。
+- 声音全部 Web Audio 合成；设置内可总开关与调音量。
+- `prefers-reduced-motion` 下会关闭大部分动画。
+
+如果只想快速看效果：`node dev/mock-server.mjs` → 打开 `http://127.0.0.1:8788/` → 跳过引导 → 点「与琥珀的雨夜」→ 在设置里填 mock 连接 → 发送。

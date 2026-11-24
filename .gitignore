@@ -1,0 +1,9 @@
+# 巡检截图与本地测试产物
+dev/*.png
+dev/backup-test.json
+dev/lighthouse-pwa.json
+
+# 系统与依赖
+.DS_Store
+Thumbs.db
+node_modules/
