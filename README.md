@@ -7,6 +7,7 @@
 > 补丁 A/B：试穿只写 `trials` + contentHash 判重/查重合并；CCv3 内嵌书、挂载优先级与同 key 冲突高亮；群聊 natural_order。
 >
 > 安卓安装包（debug 签名，含补丁 A/B）：见 [Releases](https://github.com/leechary337688-sudo/pocket-tavern/releases/latest)。
+> 在线预览（无需安装，GitHub Pages）：https://leechary337688-sudo.github.io/pocket-tavern/
 
 ---
 
