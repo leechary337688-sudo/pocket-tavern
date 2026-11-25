@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="袖珍酒馆：举杯">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#241811"/>
+      <stop offset=".55" stop-color="#17110D"/>
+      <stop offset="1" stop-color="#0F0B08"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="58%">
+      <stop offset="0" stop-color="#E8A33D" stop-opacity=".34"/>
+      <stop offset=".55" stop-color="#E8A33D" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#E8A33D" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD98A"/>
+      <stop offset=".42" stop-color="#E8A33D"/>
+      <stop offset="1" stop-color="#A9651A"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFF3DC" stop-opacity=".55"/>
+      <stop offset=".5" stop-color="#EFE6DA"/>
+      <stop offset="1" stop-color="#FFF3DC" stop-opacity=".4"/>
+    </linearGradient>
+    <linearGradient id="stem" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F6EBD9"/>
+      <stop offset="1" stop-color="#C9B699"/>
+    </linearGradient>
+    <radialGradient id="bubble" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".9"/>
+      <stop offset=".6" stop-color="#F5E3C2" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#E8A33D" stop-opacity=".15"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g opacity=".5" stroke="#3A2A1D" stroke-width="1">
+    <path d="M0 78 C110 62 210 96 328 74 C402 60 460 70 512 58" fill="none"/>
+    <path d="M0 128 C96 112 190 146 300 126 C390 110 452 124 512 108" fill="none"/>
+    <path d="M0 412 C120 428 220 398 330 418 C410 432 466 422 512 432" fill="none"/>
+    <path d="M0 462 C120 476 220 448 330 466 C410 478 466 470 512 478" fill="none"/>
+  </g>
+  <rect width="512" height="512" fill="url(#glow)"/>
+
+  <circle cx="256" cy="250" r="170" fill="none" stroke="#E8A33D" stroke-opacity=".18" stroke-width="2"/>
+  <circle cx="256" cy="250" r="192" fill="none" stroke="#E8A33D" stroke-opacity=".08" stroke-width="1" stroke-dasharray="2 10"/>
+
+  <!-- sparkles -->
+  <g fill="#E8A33D">
+    <path d="M112 170 q2 14 16 16 q-14 2 -16 16 q-2 -14 -16 -16 q14 -2 16 -16Z" opacity=".75"/>
+    <path d="M402 208 q1.6 11 13 13 q-11.4 1.6 -13 13 q-1.6 -11.4 -13 -13 q11.4 -1.6 13 -13Z" opacity=".5"/>
+    <path d="M386 136 q1.2 8 9 9 q-7.8 1.2 -9 9 q-1.2 -7.8 -9 -9 q7.8 -1.2 9 -9Z" opacity=".35"/>
+  </g>
+
+  <!-- goblet bowl -->
+  <path d="M170 166 L342 166 L324 270 C318 306 291 328 256 328 C221 328 194 306 188 270 Z"
+        fill="url(#amber)" stroke="#3A2414" stroke-opacity=".6" stroke-width="4"/>
+  <!-- liquid depth + inner shading -->
+  <path d="M184 214 L328 214 L318 268 C313 296 290 314 256 314 C222 314 199 296 194 268 Z"
+        fill="#8C4E14" opacity=".28"/>
+  <!-- foam -->
+  <path d="M170 166 L342 166 L341 182 C332 196 318 200 308 190 C298 204 280 206 270 192 C258 206 238 206 228 190 C216 204 196 202 188 186 L186 180 Z"
+        fill="#F8EEDD" opacity=".96"/>
+  <g fill="url(#bubble)">
+    <circle cx="203" cy="170" r="13"/>
+    <circle cx="234" cy="160" r="16"/>
+    <circle cx="268" cy="168" r="12"/>
+    <circle cx="296" cy="158" r="15"/>
+    <circle cx="320" cy="172" r="10"/>
+    <circle cx="184" cy="178" r="8"/>
+  </g>
+  <!-- rim -->
+  <path d="M170 166 L342 166" stroke="url(#rim)" stroke-width="6" stroke-linecap="round"/>
+  <!-- glass highlights -->
+  <path d="M200 188 C204 232 208 262 218 292" stroke="#FFF3DC" stroke-opacity=".38" stroke-width="9" stroke-linecap="round" fill="none"/>
+  <path d="M312 192 C309 228 305 254 298 278" stroke="#FFF3DC" stroke-opacity=".16" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <!-- rising bubbles -->
+  <g fill="#FFE7B8" opacity=".55">
+    <circle cx="240" cy="236" r="4"/>
+    <circle cx="268" cy="254" r="3"/>
+    <circle cx="282" cy="226" r="2.5"/>
+    <circle cx="222" cy="268" r="2.4"/>
+  </g>
+
+  <!-- stem and foot -->
+  <path d="M240 328 L272 328 L270 382 C270 390 276 394 284 396 L316 402 C328 404 332 412 332 420 L332 428 L180 428 L180 420 C180 412 184 404 196 402 L228 396 C236 394 242 390 242 382 Z"
+        fill="url(#stem)" stroke="#3A2414" stroke-opacity=".45" stroke-width="3"/>
+  <path d="M246 336 L246 382 C246 392 240 400 230 402 L208 406" stroke="#FFF7E8" stroke-opacity=".5" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M188 420 L324 420" stroke="#7A5A34" stroke-opacity=".55" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- base shadow + glow -->
+  <ellipse cx="256" cy="446" rx="128" ry="14" fill="#000" opacity=".32"/>
+  <ellipse cx="256" cy="442" rx="96" ry="7" fill="#E8A33D" opacity=".18"/>
+</svg>

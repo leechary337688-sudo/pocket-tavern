@@ -1,0 +1,40 @@
+{
+  "plugins": [
+    {
+      "id": "token-counter",
+      "name": "上下文酒量",
+      "version": "1.0.0",
+      "author": "PocketTavern",
+      "description": "实时估算上下文占用，标出世界书触发了哪些条目。",
+      "entry": "plugin.js",
+      "minAppVersion": "0.1.0",
+      "permissions": ["storage"],
+      "icon": "🫗",
+      "builtin": true
+    },
+    {
+      "id": "dice-log",
+      "name": "骰子记录",
+      "version": "1.0.0",
+      "author": "PocketTavern",
+      "description": "把每一次掷骰写进本地记录，并提供快捷投掷。",
+      "entry": "plugin.js",
+      "minAppVersion": "0.1.0",
+      "permissions": ["storage"],
+      "icon": "🎲",
+      "builtin": true
+    },
+    {
+      "id": "story-state",
+      "name": "剧情状态",
+      "version": "1.0.0",
+      "author": "PocketTavern",
+      "description": "从聊天里的伤势/死亡/地点关键词推断角色状态，给头像加标记，并把状态写进下一轮提示词。",
+      "entry": "plugin.js",
+      "minAppVersion": "0.3.0",
+      "permissions": [],
+      "icon": "🎭",
+      "builtin": true
+    }
+  ]
+}

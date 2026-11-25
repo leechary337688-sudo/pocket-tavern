@@ -1,0 +1,12 @@
+{
+  "id": "story-state",
+  "name": "剧情状态",
+  "version": "1.0.0",
+  "author": "PocketTavern",
+  "description": "从聊天里的伤势/死亡/地点关键词推断角色状态，给头像加标记，并把状态写进下一轮提示词。",
+  "entry": "plugin.js",
+  "minAppVersion": "0.3.0",
+  "permissions": [],
+  "icon": "🎭",
+  "builtin": true
+}

@@ -1,0 +1,11 @@
+{
+  "id": "token-counter",
+  "name": "上下文酒量",
+  "version": "1.0.0",
+  "author": "PocketTavern",
+  "description": "实时估算上下文占用，标出世界书触发了哪些条目。",
+  "entry": "plugin.js",
+  "minAppVersion": "0.1.0",
+  "permissions": ["storage"],
+  "icon": "🫗"
+}

@@ -1,0 +1,56 @@
+{
+  "id": "./",
+  "name": "袖珍酒馆 PocketTavern",
+  "short_name": "袖珍酒馆",
+  "description": "口袋里的 SillyTavern：角色卡、世界书、流式聊天与插件，全部留在本机。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#17110D",
+  "theme_color": "#17110D",
+  "categories": ["entertainment", "social"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "和琥珀开聊",
+      "short_name": "开聊",
+      "url": "./#/chat/chat-demo",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "角色卡库",
+      "short_name": "卡库",
+      "url": "./#/cards",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "创意工坊",
+      "short_name": "工坊",
+      "url": "./#/workshop",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

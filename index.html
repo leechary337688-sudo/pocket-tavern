@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+    <title>袖珍酒馆 · PocketTavern</title>
+    <meta name="description" content="口袋里的 SillyTavern：角色卡、世界书、流式聊天与插件，全部留在本机。" />
+    <meta name="theme-color" content="#17110D" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="袖珍酒馆" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="src/styles/app.css" />
+  </head>
+  <body>
+    <div id="boot-screen" class="boot-screen" role="status" aria-live="polite">
+      <div class="boot-screen__glow" aria-hidden="true"></div>
+      <div class="boot-screen__inner">
+        <img class="boot-screen__logo" src="icons/logo.svg" alt="" width="132" height="132" />
+        <p class="boot-screen__eyebrow">POCKET TAVERN</p>
+        <h1 class="boot-screen__title">袖珍酒馆</h1>
+        <div class="boot-screen__bar"><span class="boot-screen__fill"></span></div>
+        <p class="boot-screen__label">斟酒中…</p>
+        <p class="boot-screen__fine">内容只留在这台设备上 · 无遥测</p>
+      </div>
+    </div>
+
+    <div id="app" class="app-shell">
+      <div id="view-root" class="view-root"></div>
+      <div id="drawer-root"></div>
+      <div id="toast-root" class="toast-host" role="status" aria-live="polite"></div>
+      <div id="dice-root"></div>
+    </div>
+
+    <noscript>
+      <div class="noscript">袖珍酒馆需要 JavaScript 才能开张，请在浏览器里启用它。</div>
+    </noscript>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

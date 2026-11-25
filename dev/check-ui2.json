@@ -1,0 +1,92 @@
+{
+  "world": {
+    "card": {
+      "w": 358,
+      "h": 74
+    },
+    "main": {
+      "w": 284,
+      "h": 56
+    },
+    "text": {
+      "w": 202,
+      "h": 42
+    },
+    "sw": {
+      "w": 48,
+      "h": 44
+    },
+    "mainDisplay": "flex",
+    "textDisplay": "flex",
+    "swOn": true
+  },
+  "pluginInfo": {
+    "text": "插件\n\n清单式权限；单个插件崩溃不会影响主程序\n\n🫗\n上下文酒量\nv1.0.0\n内置\n\n实时估算上下文占用，标出世界书触发了哪些条目。\n\n权限：storage\n🎲\n骰子记录\nv1.0.0\n内置\n\n把每一次掷骰写进本地记录，并提供快捷投掷。\n\n权限：storage\n插件面板\n🫗\n上下文酒量\ntoken-counter\n121\n已占用 / 6144 预算\n2%\n1 条消息 · 输出预留 2048\n8192\n上下文窗口\n2048\nmax_tokens\n121\n聊天记录估算\n—\n提示词分区\n\n打开一次会话或生成一次回复后，这里会显示实际的提示词分区。\n\n估算为轻量 tokenizer，与实际模型可能相差 10–20%。\n\n🎲\n骰子记录\ndice-log\n插件市场\n本地索引 · 远程源可配\n\n默认读取 /plugins/index.json。远程安装尚未实现（v0.1.0 明确占位），当前只展示索引条目，不会自动下载代码。\n\n刷新索引\n\n远程索引条目会显示在这里。",
+    "switches": 2
+  },
+  "switches": [
+    {
+      "label": "允许成人内容",
+      "hasSwitch": true,
+      "inputVisible": {
+        "w": 48,
+        "h": 44
+      },
+      "switchBox": {
+        "w": 48,
+        "h": 44
+      }
+    },
+    {
+      "label": "启用音效",
+      "hasSwitch": true,
+      "inputVisible": {
+        "w": 48,
+        "h": 44
+      },
+      "switchBox": {
+        "w": 48,
+        "h": 44
+      }
+    },
+    {
+      "label": "语音朗读",
+      "hasSwitch": true,
+      "inputVisible": {
+        "w": 48,
+        "h": 44
+      },
+      "switchBox": {
+        "w": 48,
+        "h": 44
+      }
+    },
+    {
+      "label": "备份包含 API 密钥",
+      "hasSwitch": true,
+      "inputVisible": {
+        "w": 48,
+        "h": 44
+      },
+      "switchBox": {
+        "w": 48,
+        "h": 44
+      }
+    }
+  ],
+  "aboutInfo": {
+    "hero": {
+      "w": 165,
+      "h": 44
+    },
+    "heroDisplay": "flex",
+    "meta": {
+      "w": 273,
+      "h": 38
+    },
+    "metaDisplay": "flex",
+    "metaGap": "4px 16px",
+    "text": "关于\n袖珍酒馆 PocketTavern\nv0.1.0 · 移动优先 PWA\n\n角色卡聊天、世界书、流式后端与插件。所有数据保存在本机 IndexedDB；没有遥测，也不会把内容发到你未配置的服务器。\n\n存储 IndexedDB pt-db\n主题 深夜 / 白天\n构建 原生 ES2022 · 无打包"
+  },
+  "errors": []
+}
