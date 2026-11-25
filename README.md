@@ -8,6 +8,7 @@
 >
 > **在线版**：https://leechary337688-sudo.github.io/pocket-tavern/
 > **安装包 0.4.0**：https://github.com/leechary337688-sudo/pocket-tavern/releases/tag/v0.4.0
+> **电脑版 / 本地模型进阶**：见 [advanced.md](./advanced.md)；免安装电脑版在 Release 资产 `PocketTavern-0.4.0-desktop.zip`
 > **旧版 0.3.0**：https://github.com/leechary337688-sudo/pocket-tavern/releases/tag/v0.3.0
 
 ---
