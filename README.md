@@ -582,6 +582,7 @@ node dev/check-04-preset-ui.mjs
 node dev/test-04-plugins.mjs
 node dev/check-04-member-state.mjs
 node dev/check-04-affection-ui.mjs
+node dev/check-04-320.mjs
 ```
 
 | # | 验收项 | 状态 | 证据 |
