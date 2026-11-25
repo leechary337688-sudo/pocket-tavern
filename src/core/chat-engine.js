@@ -4,7 +4,7 @@
 import { ApiClient } from '../core/api-client.js';
 import { buildPrompt } from '../core/prompt-builder.js';
 import { resolveMounts } from '../core/mount-resolver.js';
-import { planSpeakers } from '../core/group-scheduler.js';
+import { planSpeakers, findMentions } from '../core/group-scheduler.js';
 import { estimateTokens } from '../core/tokenizer-lite.js';
 import { makeId } from '../data/db.js';
 
@@ -307,10 +307,52 @@ export class ChatEngine {
       this.chat.memberState = { ...(this.chat.memberState || {}), ...patch.memberState };
       touched = true;
     }
+    if (Array.isArray(patch.memberIds)) {
+      const ids = [...new Set(patch.memberIds.map(String).filter(Boolean))];
+      if (ids.length >= 2) {
+        this.chat.memberIds = ids;
+        this.chat.kind = 'group';
+        this.chat.memberState = { ...(this.chat.memberState || {}) };
+        const defaultTalk = Number(this.settings?.group?.defaultTalkativeness ?? 0.5);
+        ids.forEach((id) => {
+          if (!this.chat.memberState[id]) this.chat.memberState[id] = { talkativeness: defaultTalk, enabled: true };
+        });
+        touched = true;
+      }
+    }
     if (!touched) return this.getChatInfo();
     await this._loadCast();
     await this._saveNow();
     this.lastMounts = null;
+    this._emit('members', { members: this.members, card: this.card });
+    this.bus?.emit('chat:changed', { chatId: this.chat.id, chat: this.chat });
+    return this.getChatInfo();
+  }
+
+  /** 中途邀请角色：单聊会保留全部消息并升级为房间（group）。 */
+  async inviteMembers(memberIds = []) {
+    if (!this.chat) throw new Error('还没有打开会话');
+    const base = Array.isArray(this.chat.memberIds) && this.chat.memberIds.length
+      ? this.chat.memberIds
+      : [this.chat.cardId];
+    const ids = [...new Set([...base, ...memberIds.map(String).filter(Boolean)])];
+    const cards = (await Promise.all(ids.map((id) => this.repo.getCard(id)))).filter(Boolean);
+    const valid = cards.map((card) => card.id);
+    if (valid.length < 2) throw new Error('房间里至少要有两位角色');
+    this.chat.memberIds = valid;
+    this.chat.kind = 'group';
+    this.chat.memberState = { ...(this.chat.memberState || {}) };
+    const defaultTalk = Number(this.settings?.group?.defaultTalkativeness ?? 0.5);
+    valid.forEach((id) => {
+      if (!this.chat.memberState[id]) this.chat.memberState[id] = { talkativeness: defaultTalk, enabled: true };
+    });
+    this.lastMounts = null;
+    await this._loadCast();
+    await this._saveNow();
+    const added = cards.filter((card) => !base.includes(card.id));
+    if (added.length) {
+      await this.addSystemMessage(`（${added.map((card) => card.name).join('、')} 在桌边坐下，房间多了一位客人。）`);
+    }
     this._emit('members', { members: this.members, card: this.card });
     this.bus?.emit('chat:changed', { chatId: this.chat.id, chat: this.chat });
     return this.getChatInfo();
@@ -549,20 +591,42 @@ export class ChatEngine {
 
   async _generate(options) {
     const turns = Array.isArray(options.turns) && options.turns.length
-      ? options.turns
+      ? options.turns.map((turn) => ({ ...turn }))
       : [{ cardId: this.card?.id, name: this.card?.name, card: this.card, reason: '单聊' }];
+    const spoken = new Set();
     let lastError = null;
     for (let i = 0; i < turns.length; i++) {
       const turn = turns[i];
+      if (turn.cardId) spoken.add(turn.cardId);
+      let message = null;
       try {
-        await this._generateTurn({ ...options, speaker: turn.card || null, turn, turnIndex: i });
+        message = await this._generateTurn({ ...options, speaker: turn.card || null, turn, turnIndex: i });
       } catch (err) {
         lastError = err;
         const wasStop = this._manualStop || err?.name === 'AbortError';
         if (wasStop || i === turns.length - 1) return;
         this._emit('notice', { level: 'warn', message: `${turn?.name || '角色'}没接上话：${err?.message || err}` });
       }
-      if (this._manualStop && i < turns.length - 1) return;
+      if (this._manualStop) {
+        if (i < turns.length - 1) return;
+        break;
+      }
+      // 自然接话：角色回复里整词点名了尚未发言的成员，就把对方请到下一棒。
+      if (message && this.isGroup && options.mode === 'new' && turn.cardId) {
+        const mentions = findMentions(message.text, this.members)
+          .filter((member) => member.id && member.id !== turn.cardId && !spoken.has(member.id));
+        for (const member of mentions) {
+          if (turns.length >= MAX_GROUP_TURNS) break;
+          const later = turns.findIndex((item, index) => index > i && item.cardId === member.id);
+          if (later >= 0) {
+            const [queued] = turns.splice(later, 1);
+            turns.splice(i + 1, 0, queued);
+          } else {
+            turns.splice(i + 1, 0, { cardId: member.id, name: member.name, card: member, reason: '被点名' });
+          }
+          spoken.add(member.id);
+        }
+      }
     }
     if (lastError && turns.length === 1) throw lastError;
   }
@@ -670,6 +734,7 @@ export class ChatEngine {
       this.abortController = null;
       this._cancelFlush();
     }
+    return placeholder;
   }
 
   _finalizeSuccess(message, mode, finalText) {
@@ -981,11 +1046,14 @@ export class ChatEngine {
   async buildPreview({ userInput = '', extraSystem = '', speakerId = '' } = {}) {
     if (!this.chat) throw new Error('先打开一个会话');
     const messages = this.chat.messages.filter((m) => !m.pending);
-    const speaker = speakerId
-      ? this.members.find((m) => m.id === speakerId)
-      : this.isGroup
-        ? this.members.find((m) => m.id === this.lastSpeakerId) || this.members[0]
-        : this.card;
+    let speaker = null;
+    if (speakerId) {
+      speaker = this.members.find((m) => m.id === speakerId) || null;
+    } else if (this.isGroup) {
+      // 预览跟随这一条输入的实际首位发言人，避免“预览是甲、发送却是乙”。
+      const turns = this.planTurns({ userInput, messages });
+      speaker = turns[0]?.card || this.members.find((m) => m.id === this.lastSpeakerId) || this.members[0];
+    }
     return this._build({ history: messages, userInput, extraSystem, speaker: speaker || this.card });
   }
 

@@ -238,20 +238,34 @@ export function mount(el, ctx) {
   avatarImg.addEventListener('error', () => {
     avatarImg.src = 'icons/logo.svg';
   });
+  const headerAvatar = h('span', { class: 'chat-avatar-wrap' }, avatarImg);
   const titleEl = h('h1', { class: 'chat-title' }, chatInfo.title || card.name || '酒馆');
+  const roomBadge = h('span', { class: 'chat-room-badge', hidden: chatInfo.kind !== 'group' }, `房间 · ${engine.members?.length || 0} 位`);
   const statusEl = h('p', { class: 'chat-status' }, '');
   const statusDot = h('span', { class: 'chat-status__dot' });
 
+  function syncRoomBadge() {
+    const isRoom = (chatInfo.kind || engine.kind) === 'group';
+    roomBadge.hidden = !isRoom;
+    roomBadge.textContent = `房间 · ${engine.members?.length || chatInfo.memberIds?.length || 0} 位`;
+  }
+
   async function openGroupSettings() {
+    const currentChat = {
+      ...(engine.chat || {}),
+      memberIds: engine.members?.length ? engine.members.map((m) => m.id) : [card.id],
+      memberState: engine.chat?.memberState || {},
+    };
     await openGroupEditor({
       repo,
       settings,
-      chat: engine.chat,
+      chat: currentChat,
       onSave: async (data) => {
         const info = await engine.updateChatSettings(data);
         chatInfo = info || engine.getChatInfo();
         titleEl.textContent = chatInfo.title || card.name || '酒馆';
-        toast('群聊设置已保存', { type: 'success' });
+        syncRoomBadge();
+        toast(chatInfo.kind === 'group' ? `房间已开，${chatInfo.members?.length || data.memberIds.length} 位在座` : '群聊设置已保存', { type: 'success' });
       },
     });
   }
@@ -271,7 +285,7 @@ export function mount(el, ctx) {
     'header',
     { class: 'chat-topbar' },
     h('button', { class: 'icon-btn chat-back', type: 'button', 'aria-label': '返回酒馆', onclick: () => ctx.onBack?.() }, icon('back')),
-    h('button', { class: 'chat-identity', type: 'button', 'aria-label': '查看角色档案', onclick: showCardInfo }, avatarImg, h('span', { class: 'chat-identity__text' }, titleEl, h('span', { class: 'chat-status' }, statusDot, statusEl))),
+    h('button', { class: 'chat-identity', type: 'button', 'aria-label': '查看角色档案', onclick: showCardInfo }, headerAvatar, h('span', { class: 'chat-identity__text' }, h('span', { class: 'chat-title-line' }, titleEl, roomBadge), h('span', { class: 'chat-status' }, statusDot, statusEl))),
     h(
       'div',
       { class: 'chat-topbar__actions' },
@@ -338,17 +352,56 @@ export function mount(el, ctx) {
 
   const chatBody = h('div', { class: 'chat-body' }, scroller, scrollDownBtn, undoBar, quickbar, composer);
   root.append(header, chatBody);
+  syncRoomBadge();
+  refreshHeaderDecoration();
 
   // ---------------- 消息节点 ----------------
   function speakerFor(msg) {
-    const id = msg.speaker || msg.cardId || '';
-    return members.find((m) => m.id === id) || (card?.id === id ? card : null) || members[0] || card;
+    const name = msg.speaker || '';
+    const id = msg.cardId || '';
+    return members.find((m) => m.id === id || (name && m.name === name))
+      || (card?.id === id || (name && card?.name === name) ? card : null)
+      || members[0]
+      || card;
   }
 
   function metaFor(msg) {
     if (msg.sender === 'user') return '你';
     if (msg.sender === 'system') return '酒馆';
     return speakerFor(msg)?.name || '角色';
+  }
+
+  /** 头像状态由插件提供；宿主只认白名单状态，插件不能直接改 DOM。 */
+  function decorateAvatar(wrapper, speaker, msg) {
+    if (!wrapper || !loader?.getAvatarDecorations) return;
+    wrapper.querySelectorAll('.avatar-deco').forEach((node) => node.remove());
+    wrapper.classList.remove('is-hurt', 'is-dead', 'is-alert');
+    let decorations = [];
+    try {
+      decorations = loader.getAvatarDecorations({
+        card: speaker,
+        message: msg,
+        chat: engine.chat,
+        members,
+      }) || [];
+    } catch {
+      decorations = [];
+    }
+    for (const deco of decorations) {
+      if (deco.state && deco.state !== 'normal') wrapper.classList.add(`is-${deco.state}`);
+      if (deco.badge) {
+        wrapper.appendChild(h('span', {
+          class: 'avatar-deco',
+          title: deco.title || deco.label || '',
+          'aria-label': deco.label || '',
+        }, deco.badge));
+      }
+    }
+  }
+
+  function refreshHeaderDecoration() {
+    const last = [...messages].reverse().find((msg) => msg.sender === 'char');
+    decorateAvatar(headerAvatar, card, last);
   }
 
   function buildMessage(msg, index) {
@@ -371,10 +424,13 @@ export function mount(el, ctx) {
       h('time', { class: 'msg__time' }, formatTime(msg.sendDate)),
       msg.starred ? icon('starFill', { size: 13, className: 'msg__star' }) : null,
     );
-    const avatar = isChar
-      ? h('div', { class: 'msg__avatar' }, h('img', { class: 'avatar avatar--48', alt: '', src: speakerFor(msg)?.avatar || 'icons/logo.svg' }))
-      : null;
-    if (avatar) avatar.querySelector('img').addEventListener('error', (event) => { event.target.src = 'icons/logo.svg'; });
+    let avatar = null;
+    if (isChar) {
+      const speaker = speakerFor(msg);
+      avatar = h('div', { class: 'msg__avatar' }, h('img', { class: 'avatar avatar--48', alt: '', src: speaker?.avatar || 'icons/logo.svg' }));
+      avatar.querySelector('img').addEventListener('error', (event) => { event.target.src = 'icons/logo.svg'; });
+      decorateAvatar(avatar, speaker, msg);
+    }
     if (isChar && (msg.swipes?.length || 0) > 1) {
       foot.appendChild(
         h(
@@ -593,6 +649,7 @@ export function mount(el, ctx) {
       title: chatInfo.title || '酒馆',
       items: [
         { key: 'preview', label: '组装预览', icon: 'terminal', description: '看系统提示、世界书与聊天预算' },
+        { key: 'invite', label: chatInfo.kind === 'group' ? '群聊成员与规则' : '邀请角色 · 转为房间', icon: 'user', description: chatInfo.kind === 'group' ? '邀请/移除，改发言规则' : '保留这局消息，多开一张椅子' },
         { key: 'worldMount', label: '世界书挂载', icon: 'book', description: '一局一本；需要叠设定再开高级' },
         { key: 'world', label: '世界书', icon: 'book' },
         { key: 'cards', label: '角色卡库', icon: 'cards' },
@@ -603,6 +660,7 @@ export function mount(el, ctx) {
     });
     if (!action) return;
     if (action === 'preview') return openPreview();
+    if (action === 'invite') return openGroupSettings();
     if (action === 'worldMount') return openWorldMount();
     if (action === 'world') return ctx.onOpenWorldbook?.();
     if (action === 'cards') return ctx.onOpenCards?.();
@@ -1160,6 +1218,7 @@ export function mount(el, ctx) {
         messages.push(message);
         list.addMessage(message);
         updateMeter();
+        refreshHeaderDecoration();
       }
     }),
     engine.on('messageUpdated', ({ message }) => {
@@ -1168,11 +1227,13 @@ export function mount(el, ctx) {
       if (i >= 0) messages[i] = message;
       list.refreshMessage(message);
       updateMeter();
+      refreshHeaderDecoration();
     }),
     engine.on('messagesReplaced', ({ messages: next }) => {
       messages = (next || []).map(cloneMessage);
       list.setMessages(messages, { atBottom: true });
       updateMeter();
+      refreshHeaderDecoration();
     }),
     engine.on('stream', ({ messageId, text }) => {
       list.patchStream(messageId, text);
@@ -1194,7 +1255,10 @@ export function mount(el, ctx) {
     }),
     engine.on('members', ({ members: next }) => {
       members = (next || []).map((m) => ({ ...m }));
+      chatInfo = { ...chatInfo, kind: members.length > 1 ? 'group' : chatInfo.kind, memberIds: members.map((m) => m.id) };
+      syncRoomBadge();
       list.setMessages(messages, { atBottom: false });
+      refreshHeaderDecoration();
     }),
     engine.on('error', ({ error }) => {
       toastError(String(error?.message || '生成失败'), { action: '去设置', onAction: () => ctx.onOpenSettings?.(), duration: 5000 });

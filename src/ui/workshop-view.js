@@ -100,7 +100,18 @@ export function mount(el, ctx = {}) {
   const unsubs = [];
   const unsubSettings = ctx.bus?.on?.('settings:changed', () => refresh({ quiet: true }));
   if (typeof unsubSettings === 'function') unsubs.push(unsubSettings);
-  const unsubWorkshop = ctx.bus?.on?.('workshop:changed', () => refresh({ quiet: true }));
+  const unsubWorkshop = ctx.bus?.on?.('workshop:changed', (item) => {
+    if (item) {
+      // 刚上架的作品要能在第一屏看到：清掉搜索/类型/tag 过滤
+      state.q = '';
+      search.value = '';
+      state.type = '';
+      state.tag = '';
+      typeTabsRender();
+      tagsRender();
+    }
+    refresh({ quiet: true });
+  });
   if (typeof unsubWorkshop === 'function') unsubs.push(unsubWorkshop);
 
   function typeTabsRender() {

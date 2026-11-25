@@ -71,7 +71,13 @@ export function mount(el, ctx = {}) {
   const formHost = h('section', { class: 'gen-form' });
   const status = h('div', { class: 'gen-status', role: 'status' });
   const resultHost = h('section', { class: 'gen-result', hidden: true });
+  const draftBar = h('div', { class: 'gen-draft-bar', hidden: true });
+  const draftText = h('span', { class: 'gen-draft-bar__text' });
+  const draftClear = h('button', { class: 'text-btn', type: 'button' }, '清空草稿');
+  draftClear.addEventListener('click', () => clearDraft());
+  draftBar.append(draftText, draftClear);
   scroll.append(
+    draftBar,
     h('div', { class: 'gen-intro' },
       h('span', { class: 'gen-intro__badge' }, icon('sparkle', { size: 14 }), '创意工坊'),
       h('h2', {}, '先捏个雏形，再一起改。'),
@@ -87,6 +93,104 @@ export function mount(el, ctx = {}) {
   function liveSettings() {
     return ctx.repo?.settings || settings;
   }
+
+  // ---------- 草稿：只存本机 IndexedDB，不写正式卡库 ----------
+  const DRAFT_NS = '__workshop';
+  const DRAFT_KEY = 'drafts';
+  let draftReady = false;
+  let draftTimer = null;
+  let draftLast = '';
+
+  function draftPayload() {
+    return {
+      card: state.card ? JSON.parse(JSON.stringify(state.card)) : null,
+      idea: state.idea,
+      world: state.world ? JSON.parse(JSON.stringify(state.world)) : null,
+      source: state.source,
+      language: state.language,
+      temperature: state.temperature,
+      model: state.model,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  function draftDigest(payload = draftPayload()) {
+    return JSON.stringify(payload);
+  }
+
+  function showDraftBar(label) {
+    draftText.textContent = label;
+    draftBar.hidden = false;
+  }
+
+  async function saveDraftNow() {
+    if (!draftReady || !ctx.repo || state.disposed) return;
+    const payload = draftPayload();
+    const digest = draftDigest(payload);
+    if (digest === draftLast) return;
+    draftLast = digest;
+    try {
+      await ctx.repo.extSet(DRAFT_NS, DRAFT_KEY, payload);
+    } catch {
+      /* 草稿失败不打断创作 */
+    }
+  }
+
+  function scheduleDraftSave() {
+    if (!draftReady) return;
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveDraftNow, 500);
+  }
+
+  async function clearDraft() {
+    draftReady = false;
+    clearTimeout(draftTimer);
+    try {
+      await ctx.repo?.extDelete?.(DRAFT_NS, DRAFT_KEY);
+    } catch {
+      /* ignore */
+    }
+    draftLast = draftDigest({ card: null, idea: '', world: null, source: '' });
+    draftBar.hidden = true;
+    draftReady = true;
+  }
+
+  async function restoreDraft() {
+    if (!ctx.repo) {
+      draftReady = true;
+      return;
+    }
+    try {
+      const saved = await ctx.repo.extGet?.(DRAFT_NS, DRAFT_KEY);
+      if (saved && !state.card && !state.world && !state.idea && !state.source) {
+        if (saved.idea || saved.card) {
+          state.idea = String(saved.idea || '');
+          state.card = saved.card || null;
+        }
+        if (saved.source || saved.world) {
+          state.source = String(saved.source || '');
+          state.world = saved.world || null;
+        }
+        if (saved.language) state.language = saved.language;
+        if (Number.isFinite(Number(saved.temperature))) state.temperature = Number(saved.temperature);
+        if (saved.model !== undefined) state.model = String(saved.model || '');
+        if (saved.card || saved.world || saved.idea || saved.source) {
+          state.mode = saved.card || !saved.world ? 'card' : 'world';
+          const kindLabel = saved.card ? '角色卡' : saved.world ? '世界书' : '输入草稿';
+          showDraftBar(`已恢复上次草稿 · ${kindLabel}${saved.updatedAt ? ` · ${new Date(saved.updatedAt).toLocaleString()}` : ''}`);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    draftLast = draftDigest();
+    draftReady = true;
+    renderForm();
+    renderResult();
+  }
+
+  root.addEventListener('input', scheduleDraftSave);
+  root.addEventListener('change', scheduleDraftSave);
 
   function persistGenOptions() {
     settings.workshop = {
@@ -269,6 +373,7 @@ export function mount(el, ctx = {}) {
       state.busy = false;
       state.error = '';
       clear(status);
+      scheduleDraftSave();
       renderResult();
       toast(state.mode === 'card' ? '角色卡雏形好了，先改再转正' : '世界书条目已拆好，检查一下 key', { type: 'success' });
     } catch (err) {
@@ -363,6 +468,7 @@ export function mount(el, ctx = {}) {
       });
       if (field === 'tags') state.card.tags = parseTags(value);
       else state.card[field] = String(value || '').trim();
+      scheduleDraftSave();
       toast(`「${FIELD_LABELS[field] || field}」重生完成`, { type: 'success' });
       clear(status);
       renderCardResult();
@@ -712,6 +818,9 @@ export function mount(el, ctx = {}) {
         promote.disabled = true;
         try {
           const result = await sandbox.promote();
+          state.card = null;
+          state.idea = '';
+          await clearDraft();
           closeTrial(false);
           ctx.onPromoted?.(result.chat.id, result.card.id);
         } catch (err) {
@@ -761,9 +870,11 @@ export function mount(el, ctx = {}) {
   modeTabsRender();
   renderForm();
   renderResult();
+  restoreDraft();
 
   return {
     unmount() {
+      saveDraftNow();
       state.disposed = true;
       controller?.abort();
       trial?.destroy();

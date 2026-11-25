@@ -149,6 +149,9 @@ function makeReply(messages, temperature) {
   if (!hot && prompt.includes('【角色卡】')) {
     picks.splice(1, 0, '（她看了一眼你带来的角色卡，眼神亮了一下）');
   }
+  if (prompt.includes('本轮发言者') && prompt.includes('琥珀')) {
+    picks.push('（琥珀在桌边轻轻敲了敲杯子，像是在等一个接话的人。）');
+  }
   return picks.join('\n\n') + '\n\n';
 }
 

@@ -17,7 +17,7 @@ function statChip(text, iconName) {
 }
 
 export function mount(el, ctx) {
-  const { repo, onOpenChat, onNewChat, onOpenSettings, onOpenCards, onOpenWorkshop, onDeleted } = ctx;
+  const { repo, onOpenChat, onNewChat, onOpenSettings, onOpenCards, onOpenWorkshop, onNewRoom, onDeleted } = ctx;
   let disposed = false;
   const root = h('div', { class: 'view home-view' });
   el.appendChild(root);
@@ -64,6 +64,15 @@ export function mount(el, ctx) {
         h('button', { class: 'btn btn--ghost', type: 'button', onclick: onOpenCards }, icon('cards', { size: 18 }), '逛卡库'),
         h('button', { class: 'btn btn--ghost', type: 'button', onclick: onOpenWorkshop }, icon('sparkle', { size: 18 }), '创意工坊'),
       ),
+      h(
+        'button',
+        { class: 'home-room-cta', type: 'button', onclick: onNewRoom },
+        h('span', { class: 'home-room-cta__icon' }, icon('chat', { size: 20 })),
+        h('span', { class: 'home-room-cta__text' },
+          h('strong', {}, '开一个房间'),
+          h('small', {}, '一本世界书 + 几位角色，让他们同桌聊')),
+        icon('forward', { size: 16, className: 'home-room-cta__arrow' }),
+      ),
       h('div', { class: 'hero-glow', 'aria-hidden': 'true' }),
     );
   }
@@ -91,6 +100,7 @@ export function mount(el, ctx) {
         h(
           'div',
           { class: 'chat-row__top' },
+          chat.kind === 'group' ? h('span', { class: 'mini-tag mini-tag--amber' }, '房间') : null,
           h('span', { class: 'chat-row__name' }, chat.title || card?.name || '未命名会话'),
           chat.starred ? icon('starFill', { size: 14, className: 'chat-row__star' }) : null,
           h('span', { class: 'chat-row__time' }, chat.demo ? '示例' : relativeTime(chat.updatedAt)),

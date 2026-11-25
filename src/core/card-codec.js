@@ -179,6 +179,7 @@ export function toCharacterBook(book) {
       use_regex: Boolean(e.useRegex),
       probability: Number(e.probability ?? 100),
       token_budget: Number(e.tokenBudget) || undefined,
+      recursive: Boolean(e.recursive),
     })),
   };
 }

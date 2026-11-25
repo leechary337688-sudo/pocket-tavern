@@ -555,7 +555,7 @@ export function mount(el, ctx) {
     });
     market.append(
       h('div', { class: 'settings-subhead' }, h('h3', {}, '插件市场'), h('span', { class: 'mini-tag' }, '本地索引 · 远程源可配')),
-      h('p', { class: 'muted small' }, '默认读取 /plugins/index.json。远程安装尚未实现（v0.2.0 明确占位），当前只展示索引条目，不会自动下载代码。'),
+      h('p', { class: 'muted small' }, '默认读取 /plugins/index.json。远程安装尚未实现（当前版本明确占位），当前只展示索引条目，不会自动下载代码。'),
       h('div', { class: 'input-with-btn input-with-btn--stack' }, url, refresh),
       results,
     );
@@ -890,7 +890,7 @@ export function mount(el, ctx) {
   function aboutCard() {
     const { el: cardEl, body } = card('关于', 'info');
     body.append(
-      h('div', { class: 'about-hero' }, h('img', { class: 'about-logo', src: 'icons/logo.svg', alt: '' }), h('div', {}, h('strong', {}, '袖珍酒馆 PocketTavern'), h('span', { class: 'muted small' }, 'v0.2.0 · 移动优先 PWA'))),
+      h('div', { class: 'about-hero' }, h('img', { class: 'about-logo', src: 'icons/logo.svg', alt: '' }), h('div', {}, h('strong', {}, '袖珍酒馆 PocketTavern'), h('span', { class: 'muted small' }, 'v0.3.0 · 移动优先 PWA'))),
       h('p', { class: 'muted small about-copy' }, '角色卡聊天、世界书、流式后端与插件。所有数据保存在本机 IndexedDB；没有遥测，也不会把内容发到你未配置的服务器。'),
       h('div', { class: 'about-meta' },
         h('span', {}, h('strong', {}, '存储'), ' IndexedDB pt-db'),

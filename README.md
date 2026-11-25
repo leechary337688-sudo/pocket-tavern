@@ -3,11 +3,12 @@
 一个移动优先、安装即用的 SillyTavern 风格单页 PWA：角色卡聊天、世界书、多后端流式接入、本地插件系统，以及可自托管的创意工坊。
 原生 ES2022 + ESM，**开发态免构建**；数据只留在这台设备的 IndexedDB；没有遥测，也不会把内容发去你配置的后端之外。
 
-> 当前版本：`0.2.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布
+> 当前版本：`0.3.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布
 > 补丁 A/B：试穿只写 `trials` + contentHash 判重/查重合并；CCv3 内嵌书、挂载优先级与同 key 冲突高亮；群聊 natural_order。
+> 0.3.0 新玩法：工坊草稿、房间制、单聊邀请转房间、角色链式接话、`story-state` 头像状态插件。
 >
-> 安卓安装包（debug 签名，含补丁 B v2）：见 [Releases](https://github.com/leechary337688-sudo/pocket-tavern/releases/latest)。
-> 在线预览（无需安装，GitHub Pages）：https://leechary337688-sudo.github.io/pocket-tavern/
+> **在线版**：https://leechary337688-sudo.github.io/pocket-tavern/
+> **安装包**：https://github.com/leechary337688-sudo/pocket-tavern/releases/tag/v0.3.0
 
 ---
 
@@ -16,8 +17,7 @@
 ### 方式 A：带本地 mock 后端（推荐先这样看）
 
 ```bash
-git clone https://github.com/leechary337688-sudo/pocket-tavern.git
-cd pocket-tavern
+cd 2026-11-23-袖珍酒馆-PocketTavern
 node dev/mock-server.mjs
 ```
 
@@ -66,7 +66,10 @@ Chrome Android：地址栏右侧菜单 →「添加到主屏幕」/「安装应�
 │   ├── token-counter/         # 示例插件 1：上下文占用面板
 │   │   ├── manifest.json
 │   │   └── plugin.js
-│   └── dice-log/              # 示例插件 2：骰子记录
+│   ├── dice-log/              # 示例插件 2：骰子记录
+│   │   ├── manifest.json
+│   │   └── plugin.js
+│   └── story-state/           # 示例插件 3：剧情状态 / 头像受伤、死亡、地点
 │       ├── manifest.json
 │       └── plugin.js
 ├── src/
@@ -238,6 +241,19 @@ chat 会话显式挂载 > persona 人格 > character 卡内嵌书 > global 全�
 - `allow_self_responses` 默认关；开启后同一角色可连续发言。
 - 群聊每轮最多 3 个角色发言，消息记录 `speaker`/`cardId`，头像与名字按发言人显示。
 - 群聊顶栏「群聊成员与规则」可改标题、成员、活跃度、世界书与发言模式。
+- **角色互聊链**：角色回复里整词提到另一位在场成员时，被提到的人会被排到下一棒；仍受最多 3 人限制。测试覆盖「A 被点名先答 → 文本提到 B → B 接话」。
+- 中途加人：单聊顶栏「更多 → 邀请角色 · 转为房间」会保留已有消息，把会话升级为房间（`kind=group`），并补一条入座提示。
+
+### 5.3 房间：一本世界书 + 几位角色
+
+首页「开一个房间」是房间的主入口（卡库顶栏的「开一桌群聊」是同一个编辑器的快捷方式）。
+
+- 一个房间 = 1 本主世界书 + 至少 2 位在场角色；主书默认只挂 1 本，需要叠加时在编辑器里显式打开「启用多本世界书」（最多 8 本）。
+- 角色卡自己的内嵌书会随角色在场自动激活，**不占**主书名额。
+- 房间仍是 `chats` 表里的一条 `kind='group'` 会话，不新增数据库表；因此旧会话、备份、导出全部兼容。
+- 房间顶栏显示「房间 · N 位」，菜单里可直接改成员/规则/世界书，或继续邀请角色。
+- 单聊也可以先开，再「邀请角色 · 转为房间」；不会丢历史消息。
+- 群聊里「角色 A 提到角色 B，B 没接话」在 0.3.0 已修复：生成回合结束后会扫描角色文本，按全名匹配尚未发言的成员，插入下一棒；最多 3 人，避免自问自答/死循环。
 
 ---
 
@@ -396,6 +412,7 @@ STLite.eventSource.on('chat:promptReady', ({ prompt }) => {
 | `STLite.storage(id?)` | 插件自己的 IndexedDB 命名空间；未声明 `storage` 则全部 reject；不能访问别的插件 |
 | `STLite.ui.registerPanel({icon,title,render(el)})` | 注入设置页「插件面板」；返回注销函数 |
 | `STLite.ui.registerQuickReply({label,onTap})` | 注入聊天快捷栏；最多显示 4 个，多出归「更多」 |
+| `STLite.ui.registerAvatarDecorator(resolve)` | 注册头像状态装饰器；`resolve({name, message, messages})` 返回 `{state, badge, label, title, location}`，`state` 只接受 `normal/hurt/dead/alert`；只影响头像外观，不改消息 |
 | `STLite.ui.toast(message)` | 宿主 toast |
 | `STLite.dice.roll('1d100+5')` | 与 `/roll` 同一个骰子引擎 |
 | `STLite.tokenizer.estimate(text)` | 轻量 token 估算 |
@@ -416,7 +433,14 @@ STLite.eventSource.on('chat:promptReady', ({ prompt }) => {
 - `plugins/token-counter/plugin.js`：每 1200ms 读 `chat.getMessages()`、`getLastPromptTrace()`、`settings`，画占用/预算/分区/世界书命中；禁用时清 interval。
 - `plugins/dice-log/plugin.js`：用 `storage` 存最近 30 次掷骰；注册快捷栏 `🎲 d20`；面板可掷 d20/d100、清空记录。
 
-两个插件都只声明 `storage`，不联网。
+这两个插件都只声明 `storage`，不联网。
+
+另有 `plugins/story-state/plugin.js`（剧情状态，0.3.0 新增）：
+
+- 从最近 24 条角色消息里按关键词推断受伤/死亡，从文本里识别春灯舫/雾港/潮见市等地点；
+- 通过 `registerAvatarDecorator` 给头像加红圈「血」、灰化「✝」或琥珀「!」徽标，并刷新顶栏头像；
+- 通过 `chat:promptReady` 注入一行 `[剧情状态]`，让模型知道谁受伤/谁已死亡/当前地点；
+- 设置页面板列出每个角色的推断状态；不调用模型、不写聊天记录。头像状态是启发式，不是权威战斗系统。
 
 ---
 
@@ -434,6 +458,8 @@ STLite.eventSource.on('chat:promptReady', ({ prompt }) => {
 - 世界书：粘贴设定（≤2000 字）→ 5–15 条，表格编辑 comment / key / content；重复或空 key 红色高亮；拖 `⠿` 排序；单条 content 写入前按 200 token 截断。
 - 生成温度默认 0.9，可调 0.5–1.2；语言可跟随输入，或固定中文/English。
 - 生成结果只是草稿，**不会自动入库**。卡点「转正」才写卡库并建正式会话；世界书点「存入世界书」才写库。
+- 草稿会自动存到 IndexedDB（`extdata` 的 `__workshop/drafts`）：输入一句想法、生成一半、返回工坊或刷新页面，再回来会提示「已恢复上次草稿」，可点「清空草稿」。
+- 发布成功后会清空旧筛选并自动跳到工坊列表，新作品可见；发布只是「上架」，不是「转正入库」，要正式聊天仍需点作品详情里的「直接导入」或「试穿 → 转正」。
 
 ### 9.2 试穿沙盒
 
@@ -544,6 +570,8 @@ node dev/check-world-hash.mjs
 node dev/check-world-mount.mjs
 node dev/check-world-create.mjs
 node dev/check-preview-mounts.mjs
+node dev/check-v3.mjs
+node dev/check-story-state.mjs
 ```
 
 | # | 验收项 | 状态 | 证据 |
@@ -566,12 +594,16 @@ node dev/check-preview-mounts.mjs
 | 16 | 关闭远程源后 AI 生成仍走本地端点 | ✅ | 生成/试穿/发布全程 `workshop.remoteEnabled=false` + 本地 mock；`check-gen.mjs`、`check-workshop.mjs` 均无远程请求错误 |
 | 21 | 卡内嵌书随卡导出再导入；A 在场触发、A 不在场不触发 | ✅ | `check-patch-v2.mjs` 10/10：导出 ccv3 → 重导入 `scope=embedded`；A 在场命中「四海阁的私藏」，换卡后不命中 |
 | 22 | 群聊点名成员 B，下一条必定 B 发言 | ✅ | `check-patch-v2.mjs`、`check-group-ui.mjs`：`speaker=程墨白`；群聊引擎 natural_order |
+| 17 | 工坊草稿自动保存/恢复，刷新不丢 | ✅ | `check-v3.mjs`：纯想法草稿恢复、生成中 7 字段卡恢复，`gen-draft-bar` 可见 |
+| 18 | 发布新作品后工坊列表可见，不被旧筛选藏住 | ✅ | `check-v3.mjs`：发布后自动跳 `#/workshop`，新标题在列；`check-gen.mjs` 也覆盖 |
+| 19 | 首页开房间；单聊中途邀请角色转房间且保留消息 | ✅ | `check-v3.mjs`：`kind=group`、2 成员、房间徽标；单聊转群前后消息数不变 |
+| 20 | 角色 A 提到 B 时 B 接话；头像随受伤/死亡变化 | ✅ | `check-v3.mjs` 9/9：`replies=["程墨白","琥珀"]`，UI 发言人正确；`check-story-state.mjs` 9/9：血/✝ 徽标、`[剧情状态]` 注入、面板状态 |
 | 补 | 补丁 A：试穿只写 trials、转正幂等/判重、丢弃零残留、查重合并 | ✅ | `check-trial-conflict.mjs` 7/7、`check-dedupe.mjs` 11/11、`check-cardbook-ui.mjs` 10/10；`check-trial-discard-streaming.mjs` 5/5（流式中途丢弃 trial 不复活） |
 | 补 | 补丁 B：挂载优先级、同 key 冲突高亮、群聊成员/活跃度/内嵌书 | ✅ | `check-preview-mounts.mjs` 5/5、`check-group-ui.mjs` 10/10、`check-world-hash.mjs` 5/5、`check-world-mount.mjs` 11/11 |
 
 补充：
 
-- 运行时 JS（`src/` + `plugins/`，共 39 个文件）实测 raw 510.3KB / gzip 163.2KB，满足首屏 JS gzip < 300KB。
+- 运行时 JS/JSON（`src/` + `plugins/`，共 45 个文件）实测 raw 636.7KB / gzip 165.7KB，满足首屏 JS gzip < 300KB。
 - 320 / 360 / 390 / 430 宽均无横向滚动（`overflow=0`）；320 下快捷栏自动折成两行。
 - 触达审计：首页/卡库/世界书/聊天/设置/工坊/生成器全部 0 个 <44×44。
 - 会话列表右滑删除：`check-swipe-delete.mjs` 输出 `SWIPE DELETE OK`（右滑 96px 露出删除，确认后删掉）。
@@ -584,6 +616,9 @@ node dev/check-preview-mounts.mjs
 
 - **Lighthouse PWA 已在交付机跑过（11.7.1，得分 100）**；真实「添加到主屏幕」仍需你在非隐身 Chrome 里点一次（CDP `installabilityErrors=[]`）。
 - **群聊是顺序发言**：每轮最多 3 位角色依次生成（不是并行/同屏抢话）；`natural_order` 的点名规则只匹配成员名全词，昵称/代词不触发。
+- **角色互聊链受 3 人上限**：A 的文本提到 B 时 B 会被排到下一棒，但如果一轮已经排满 3 人、或 B 已在本轮发过言，就不会再追加；避免自问自答和无限套娃。
+- **房间仍是会话**：一个房间 = 一本主书 + 角色；没有独立的“世界/房间”数据表，跨会话不会共享上下文，也不存在“多本书全局全开”。真正的串台只会发生在手动叠加多本主书或全局书时。
+- **头像状态是启发式**：story-state 插件只按最近 24 条文本关键词推断受伤/死亡/地点，不是战斗系统；状态会跟着会话全局显示，不会逐条消息回放历史状态。
 - **内容哈希判重是“内容级”的**：字段完全相同的内嵌书/世界书会按设计合并；确实要保留两个一模一样的世界书时，得改一个字段再另存。
 - **旧幽灵副本不自动删**：v0.2 已修新导入；历史遗留的同名副本请在「设置 → 数据 → 查重合并」里手动合并，删前会展示绑定会话数。
 - **远程插件安装未实现**：市场只读本地/远程 JSON 索引，不会下载代码；设置页有明确文案。

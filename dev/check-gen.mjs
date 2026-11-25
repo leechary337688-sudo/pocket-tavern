@@ -122,11 +122,7 @@ const download = await downloadPromise;
 const exportPath = join(HERE, 'export-test.ptpack');
 await download.saveAs(exportPath);
 await page.getByRole('button', { name: /发布到本地工坊/ }).click();
-await page.waitForSelector('.publish-done', { timeout: 15000 });
-await page.screenshot({ path: join(HERE, 'publish-done.png') });
-await page.getByRole('button', { name: /回到工坊/ }).click();
-await wait(900);
-await page.goto(`${BASE}/#/workshop`, { waitUntil: 'domcontentloaded' });
+await page.waitForURL(/#\/workshop/, { timeout: 15000 });
 await wait(900);
 const publishedTitle = await page.evaluate((name) => ({
   found: [...document.querySelectorAll('.ws-card__title')].some((el) => el.textContent === name),

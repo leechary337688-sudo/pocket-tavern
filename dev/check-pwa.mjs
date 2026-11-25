@@ -138,10 +138,11 @@ try {
   const offlinePlugins = await page.evaluate(() => ({
     hasTokenPanel: document.body.innerText.includes('上下文酒量'),
     hasDicePanel: document.body.innerText.includes('骰子记录'),
+    hasStoryPanel: document.body.innerText.includes('剧情状态'),
     toasts: document.querySelector('#toast-root')?.innerText || '',
   }));
   console.log('offline plugins', offlinePlugins);
-  if (!offlinePlugins.hasTokenPanel || !offlinePlugins.hasDicePanel) {
+  if (!offlinePlugins.hasTokenPanel || !offlinePlugins.hasDicePanel || !offlinePlugins.hasStoryPanel) {
     throw new Error('离线时插件面板没有加载');
   }
 

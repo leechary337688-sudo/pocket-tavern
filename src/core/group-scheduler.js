@@ -51,12 +51,15 @@ export function mentionsName(text, name, allNames = null) {
 
 export function findMentions(text, members = []) {
   const hits = [];
+  const source = String(text || '');
   const names = members.map((m) => m?.name).filter(Boolean);
   for (const member of members) {
-    if (!member) continue;
-    if (mentionsName(text, member.name, names)) hits.push(member);
+    if (!member?.name) continue;
+    // 同一段中文里可能出现多个名字；长短名重叠时只让更长的名字命中。
+    const shadowed = names.some((other) => other !== member.name && other.includes(member.name) && source.includes(other));
+    if (shadowed) continue;
+    if (mentionsName(source, member.name, names) || source.includes(member.name)) hits.push(member);
   }
-  const source = String(text);
   return hits.sort((a, b) => source.indexOf(a.name) - source.indexOf(b.name));
 }
 

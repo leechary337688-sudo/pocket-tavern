@@ -17,8 +17,9 @@ import { mount as mountSettings } from './ui/settings-view.js';
 import { mount as mountWorkshop } from './ui/workshop-view.js';
 import { mount as mountGen } from './ui/gen-view.js';
 import { openPublishFlow } from './ui/publish-view.js';
+import { openGroupEditor } from './ui/group-view.js';
 
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.3.0';
 const bootScreen = document.getElementById('boot-screen');
 const bootFill = bootScreen?.querySelector('.boot-screen__fill');
 const bootLabel = bootScreen?.querySelector('.boot-screen__label');
@@ -107,6 +108,38 @@ async function createChatFor(card) {
   return chat;
 }
 
+async function createRoom(data) {
+  const cards = await repo.listCards();
+  const host = cards.find((c) => c.id === data.memberIds[0]) || cards[0];
+  if (!host) throw new Error('卡库还是空的');
+  const chat = await repo.createChat(host, {
+    ...data,
+    kind: 'group',
+    messages: [{
+      id: `msg-${Date.now()}-room`,
+      sender: 'char',
+      text: `（酒馆的灯亮起来，${data.memberIds.length} 个人在桌边坐下。）\n\n${host.first_mes || '「人齐了，坐吧。」'}`,
+      swipes: [],
+      swipeIndex: 0,
+      sendDate: new Date().toISOString(),
+      tokenEstimate: 0,
+      cardId: host.id,
+      speaker: host.name,
+    }],
+  });
+  toast(`房间「${chat.title || '深夜酒馆'}」开好了`, { type: 'success' });
+  navigate(`#/chat/${encodeURIComponent(chat.id)}`);
+  return chat;
+}
+
+async function openNewRoom() {
+  await openGroupEditor({
+    repo,
+    settings,
+    onSave: createRoom,
+  });
+}
+
 async function openDemoChat() {
   const chats = await repo.listChats();
   const demo = chats.find((c) => c.demo) || chats[0];
@@ -152,7 +185,12 @@ async function renderRoute() {
           toast('卡已入库，正式会话已创建', { type: 'success' });
           navigate(`#/chat/${encodeURIComponent(chatId)}`);
         },
-        onPublished: (item) => bus.emit('workshop:changed', item),
+        onPublished: (item) => {
+          closeAllOverlays();
+          bus.emit('workshop:changed', item);
+          toast(`「${item?.title || '作品'}」已上架工坊，可试穿或直接导入`, { type: 'success', duration: 3200 });
+          navigate('#/workshop');
+        },
         onWorldSaved: (world) => toast(`世界书「${world.name}」已入库`, { type: 'success' }),
       });
     } else if (route.name === 'cards') {
@@ -207,6 +245,7 @@ async function renderRoute() {
         repo,
         onOpenChat: (id) => navigate(`#/chat/${encodeURIComponent(id)}`),
         onNewChat: () => navigate('#/cards'),
+        onNewRoom: openNewRoom,
         onOpenCards: () => navigate('#/cards'),
         onOpenWorkshop: () => navigate('#/workshop'),
         onOpenSettings: openSettings,

@@ -193,6 +193,22 @@ export function createSTLite({ manifest, repo, bus, bridge, ui, cleanup, onError
         });
         return ui.registerQuickReply(item);
       },
+      registerAvatarDecorator(resolve) {
+        if (typeof resolve !== 'function') throw new Error('registerAvatarDecorator 需要 resolve(context)');
+        const item = Object.freeze({
+          pluginId,
+          pluginName: manifest.name || pluginId,
+          resolve(context = {}) {
+            try {
+              return resolve(context);
+            } catch (err) {
+              onError?.(err, 'avatar decorator');
+              return null;
+            }
+          },
+        });
+        return ui.registerAvatarDecorator(item);
+      },
       toast(message) {
         bridge.toast(String(message || ''));
       },

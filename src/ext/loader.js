@@ -3,7 +3,7 @@
 
 import { createSTLite } from './stlite.js';
 
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.3.0';
 const ALLOWED_PERMISSIONS = new Set(['storage', 'network', 'tts']);
 
 export const FALLBACK_MANIFESTS = [
@@ -29,6 +29,18 @@ export const FALLBACK_MANIFESTS = [
     minAppVersion: '0.1.0',
     permissions: ['storage'],
     icon: '🎲',
+    builtin: true,
+  },
+  {
+    id: 'story-state',
+    name: '剧情状态',
+    version: '1.0.0',
+    author: 'PocketTavern',
+    description: '从聊天里的伤势/死亡/地点关键词推断角色状态，给头像加标记，并把状态写进下一轮提示词。',
+    entry: 'plugin.js',
+    minAppVersion: '0.3.0',
+    permissions: [],
+    icon: '🎭',
     builtin: true,
   },
 ];
@@ -61,6 +73,7 @@ export class PluginHost {
     this.loaded = new Map();
     this.panels = [];
     this.quickReplies = [];
+    this.avatarDecorators = [];
     this.indexUrl = new URL('../../plugins/index.json', import.meta.url);
     this._errorClock = new Map();
     this.ready = false;
@@ -208,6 +221,16 @@ export class PluginHost {
           this._changed();
         };
       },
+      registerAvatarDecorator: (item) => {
+        if (!item || typeof item.resolve !== 'function') throw new Error('registerAvatarDecorator 需要 resolve');
+        this.avatarDecorators.push(item);
+        this._changed();
+        return () => {
+          const i = this.avatarDecorators.indexOf(item);
+          if (i >= 0) this.avatarDecorators.splice(i, 1);
+          this._changed();
+        };
+      },
     };
     const stlite = createSTLite({
       manifest,
@@ -293,6 +316,7 @@ export class PluginHost {
     }
     this.panels = this.panels.filter((p) => p.pluginId !== id);
     this.quickReplies = this.quickReplies.filter((q) => q.pluginId !== id);
+    this.avatarDecorators = this.avatarDecorators.filter((d) => d.pluginId !== id);
   }
 
   _pluginError(id, err, context = '') {
@@ -315,6 +339,30 @@ export class PluginHost {
 
   getQuickReplies() {
     return [...this.quickReplies];
+  }
+
+  /** 宿主唯一允许的头像状态白名单；插件只能返回这些状态。 */
+  getAvatarDecorations(context = {}) {
+    const allowed = new Set(['normal', 'hurt', 'dead', 'alert']);
+    const out = [];
+    for (const decorator of this.avatarDecorators) {
+      try {
+        const result = decorator.resolve(context);
+        if (!result || typeof result !== 'object') continue;
+        const state = allowed.has(result.state) ? result.state : 'normal';
+        if (state === 'normal' && !result.badge) continue;
+        out.push({
+          pluginId: decorator.pluginId,
+          state,
+          badge: String(result.badge || '').slice(0, 4),
+          label: String(result.label || '').slice(0, 24),
+          title: String(result.title || result.label || '').slice(0, 80),
+        });
+      } catch (err) {
+        this._pluginError?.(decorator.pluginId, err, 'avatar decorator');
+      }
+    }
+    return out;
   }
 
   async reload() {

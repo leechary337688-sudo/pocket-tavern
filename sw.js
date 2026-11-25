@@ -1,5 +1,5 @@
 /* 袖珍酒馆 Service Worker — 只缓存同源应用壳；绝不缓存 API 响应、密钥或聊天内容。 */
-const VERSION = '0.2.9';
+const VERSION = '0.3.0';
 const CACHE = `pt-shell-v${VERSION}`;
 const SHELL = [
   './',
@@ -48,6 +48,8 @@ const SHELL = [
   './plugins/token-counter/plugin.js',
   './plugins/dice-log/manifest.json',
   './plugins/dice-log/plugin.js',
+  './plugins/story-state/manifest.json',
+  './plugins/story-state/plugin.js',
   './icons/logo.svg',
   './icons/favicon-32.png',
   './icons/icon-192.png',
