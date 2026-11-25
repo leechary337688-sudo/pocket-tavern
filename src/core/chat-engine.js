@@ -138,6 +138,7 @@ export class ChatEngine {
     this._interrupted = false;
     this.lastPrompt = null;
     this._emit('open', { chat: this.chat, card: this.card, members: this.members, kind: this.kind });
+    this.bus?.emit('chat:changed', { chatId: this.chat.id, chat: this.chat });
     this._emit('state', { state: 'idle' });
     return { chat: this.chat, card: this.card, members: this.members, kind: this.kind };
   }
@@ -173,6 +174,9 @@ export class ChatEngine {
     this.cast = cards;
     this.members = cards.map((c) => ({
       ...c,
+      memberState: typeof memberState[c.id] === 'string'
+        ? memberState[c.id]
+        : (memberState[c.id]?.state || 'active'),
       talkativeness: Math.min(1, Math.max(0, Number(memberState[c.id]?.talkativeness ?? this.settings?.group?.defaultTalkativeness ?? 0.5))),
     }));
     this.cardBooks = books;
@@ -224,10 +228,12 @@ export class ChatEngine {
       allowSelfResponses: Boolean(this.chat?.allowSelfResponses ?? group.allowSelfResponses),
       defaultTalkativeness: Number(group.defaultTalkativeness ?? 0.5),
     });
-    return (plan.plan || [])
+    const turns = (plan.plan || [])
       .slice(0, MAX_GROUP_TURNS)
       .map((item) => ({ ...item, card: this.members.find((m) => m.id === item.cardId) || null }))
       .filter((item) => item.card);
+    turns.blockedMentions = plan.blockedMentions || [];
+    return turns;
   }
 
   async refreshCard() {
@@ -325,8 +331,19 @@ export class ChatEngine {
     await this._saveNow();
     this.lastMounts = null;
     this._emit('members', { members: this.members, card: this.card });
+    if (patch.memberState) {
+      this.bus?.emit('chat:memberChanged', { chatId: this.chat.id, members: this.members.map((m) => ({ ...m })) });
+    }
     this.bus?.emit('chat:changed', { chatId: this.chat.id, chat: this.chat });
     return this.getChatInfo();
+  }
+
+  /** 主持人手动改成员在场状态：active / away / dead。 */
+  async setMemberState(memberId, state) {
+    const value = ['active', 'away', 'dead'].includes(state) ? state : 'active';
+    const prev = this.chat?.memberState?.[memberId];
+    const next = { ...(prev && typeof prev === 'object' ? prev : {}), state: value, enabled: value === 'active' };
+    return this.updateChatSettings({ memberState: { [memberId]: next } });
   }
 
   /** 中途邀请角色：单聊会保留全部消息并升级为房间（group）。 */
@@ -410,6 +427,10 @@ export class ChatEngine {
     this.bus?.emit('chat:messageSent', { chatId: this.chat.id, message: cloneMessage(message) });
     // 群聊：先按发言规则排出这一轮谁接话
     const turns = this.planTurns({ userInput: content });
+    if (turns.blockedMentions?.length) {
+      const names = [...new Set(turns.blockedMentions.map((m) => m.name))].join('、');
+      this._emit('notice', { level: 'info', message: `${names} 已退场（可在回忆中相见）` });
+    }
     if (this.isGroup && !turns.length) {
       this._emit('notice', { level: 'info', message: '这一轮没人接话，可以点名某位角色' });
       return;
@@ -595,6 +616,7 @@ export class ChatEngine {
       : [{ cardId: this.card?.id, name: this.card?.name, card: this.card, reason: '单聊' }];
     const spoken = new Set();
     let lastError = null;
+    let lastMessage = null;
     for (let i = 0; i < turns.length; i++) {
       const turn = turns[i];
       if (turn.cardId) spoken.add(turn.cardId);
@@ -611,10 +633,12 @@ export class ChatEngine {
         if (i < turns.length - 1) return;
         break;
       }
+      if (message) lastMessage = message;
       // 自然接话：角色回复里整词点名了尚未发言的成员，就把对方请到下一棒。
       if (message && this.isGroup && options.mode === 'new' && turn.cardId) {
         const mentions = findMentions(message.text, this.members)
-          .filter((member) => member.id && member.id !== turn.cardId && !spoken.has(member.id));
+          .filter((member) => member.id && member.id !== turn.cardId && !spoken.has(member.id))
+          .filter((member) => (member.memberState || 'active') === 'active');
         for (const member of mentions) {
           if (turns.length >= MAX_GROUP_TURNS) break;
           const later = turns.findIndex((item, index) => index > i && item.cardId === member.id);
@@ -627,6 +651,9 @@ export class ChatEngine {
           spoken.add(member.id);
         }
       }
+    }
+    if (lastMessage) {
+      this.bus?.emit('chat:generateAfter', { chatId: this.chat.id, message: cloneMessage(lastMessage) });
     }
     if (lastError && turns.length === 1) throw lastError;
   }
@@ -722,7 +749,6 @@ export class ChatEngine {
         message: cloneMessage(placeholder),
         usage: stats?.usage || null,
       });
-      this.bus?.emit('chat:generateAfter', { chatId: this.chat.id, message: cloneMessage(placeholder) });
     } catch (err) {
       if (this._manualStop || err?.name === 'AbortError') {
         await this._finishPaused(placeholder);

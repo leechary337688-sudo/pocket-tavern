@@ -6,6 +6,7 @@ import { toast, toastError } from './toast.js';
 import { ApiClient, ApiError } from '../core/api-client.js';
 import { SAMPLER_DEFAULTS, SAMPLER_META } from '../core/sampler.js';
 import { shortHash } from '../data/content-hash.js';
+import { openPresetPicker } from './preset-picker.js';
 
 const API_TYPES = [
   { value: 'openai', label: 'OpenAI 兼容' },
@@ -806,6 +807,11 @@ export function mount(el, ctx) {
           }
         } }, icon('archive', { size: 16 }), '立即快照'),
         h('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: openDedupeTool }, icon('filter', { size: 16 }), '查重合并'),
+        h('button', {
+          class: 'btn btn--ghost btn--small',
+          type: 'button',
+          onclick: () => openPresetPicker({ repo, onLoaded: () => drawData() }),
+        }, icon('book', { size: 16 }), '载入预设世界'),
       ),
       toggleRow('备份包含 API 密钥', '默认脱敏。只有在完全信任备份文件去向时才打开。', includeKeys),
       importInput,
@@ -890,7 +896,7 @@ export function mount(el, ctx) {
   function aboutCard() {
     const { el: cardEl, body } = card('关于', 'info');
     body.append(
-      h('div', { class: 'about-hero' }, h('img', { class: 'about-logo', src: 'icons/logo.svg', alt: '' }), h('div', {}, h('strong', {}, '袖珍酒馆 PocketTavern'), h('span', { class: 'muted small' }, 'v0.3.0 · 移动优先 PWA'))),
+      h('div', { class: 'about-hero' }, h('img', { class: 'about-logo', src: 'icons/logo.svg', alt: '' }), h('div', {}, h('strong', {}, '袖珍酒馆 PocketTavern'), h('span', { class: 'muted small' }, 'v0.4.0 · 移动优先 PWA'))),
       h('p', { class: 'muted small about-copy' }, '角色卡聊天、世界书、流式后端与插件。所有数据保存在本机 IndexedDB；没有遥测，也不会把内容发到你未配置的服务器。'),
       h('div', { class: 'about-meta' },
         h('span', {}, h('strong', {}, '存储'), ' IndexedDB pt-db'),

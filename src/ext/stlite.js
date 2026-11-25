@@ -15,6 +15,7 @@ export const STLITE_EVENTS = Object.freeze([
   'chat:messageReceived',
   'chat:messageEdited',
   'chat:changed',
+  'chat:memberChanged',
 ]);
 
 function freezeDeep(value) {
@@ -127,6 +128,14 @@ export function createSTLite({ manifest, repo, bus, bridge, ui, cleanup, onError
       })
     : undefined;
 
+  const llm = Object.freeze({
+    async complete(messages, opts = {}) {
+      if (!perms.has('network')) throw new Error('插件未声明 network 权限');
+      if (!bridge.llmComplete) return null;
+      return bridge.llmComplete(messages, opts);
+    },
+  });
+
   const chatApi = Object.freeze({
     getMessages() {
       const snap = bridge.getChatSnapshot();
@@ -135,8 +144,25 @@ export function createSTLite({ manifest, repo, bus, bridge, ui, cleanup, onError
     getChatInfo() {
       return bridge.getChatSnapshot()?.chat || null;
     },
+    getMembers() {
+      const members = bridge.getChatSnapshot()?.members || [];
+      return freezeDeep(members.map((m) => ({
+        id: m.id,
+        name: m.name,
+        avatar: m.avatar || '',
+        memberState: m.memberState || 'active',
+        talkativeness: Number(m.talkativeness ?? 0.5),
+      })));
+    },
     getState() {
       return bridge.getChatSnapshot()?.state || 'idle';
+    },
+    getMounts() {
+      return bridge.getChatSnapshot()?.mounts || null;
+    },
+    async setMemberState(memberId, state) {
+      if (!bridge.setMemberState) throw new Error('当前宿主不支持成员状态');
+      return bridge.setMemberState(String(memberId), String(state));
     },
     getLastPromptTrace() {
       const trace = bridge.getChatSnapshot()?.lastPromptTrace;
@@ -147,15 +173,18 @@ export function createSTLite({ manifest, repo, bus, bridge, ui, cleanup, onError
   const character = () => freezeDeep(JSON.parse(JSON.stringify(bridge.getCurrentCard() || {})));
   const settings = () => freezeDeep(JSON.parse(JSON.stringify(bridge.getSettings() || {})));
 
+  const storageApi = (id) => {
+    if (id && id !== pluginId) throw new Error('不能访问其它插件的存储');
+    return storage;
+  };
+  Object.assign(storageApi, storage);
+
   const api = {
     version: STLITE_VERSION,
     pluginId,
     eventSource,
     chat: chatApi,
-    storage: (id) => {
-      if (id && id !== pluginId) throw new Error('不能访问其它插件的存储');
-      return storage;
-    },
+    storage: storageApi,
     ui: Object.freeze({
       registerPanel(panel) {
         if (!panel || typeof panel.render !== 'function') throw new Error('registerPanel 需要 render(el)');
@@ -209,8 +238,28 @@ export function createSTLite({ manifest, repo, bus, bridge, ui, cleanup, onError
         });
         return ui.registerAvatarDecorator(item);
       },
+      registerMemberCard(card) {
+        if (!card || typeof card.render !== 'function') throw new Error('registerMemberCard 需要 render(el, member)');
+        const item = Object.freeze({
+          pluginId,
+          pluginName: manifest.name || pluginId,
+          title: String(card.title || manifest.name || pluginId),
+          render(el, member) {
+            try {
+              return card.render(el, member);
+            } catch (err) {
+              onError?.(err, 'member card');
+              return null;
+            }
+          },
+        });
+        return ui.registerMemberCard(item);
+      },
       toast(message) {
         bridge.toast(String(message || ''));
+      },
+      jumpToMessage(messageId) {
+        bridge.jumpToMessage?.(String(messageId || ''));
       },
     }),
     dice: Object.freeze({
@@ -219,6 +268,7 @@ export function createSTLite({ manifest, repo, bus, bridge, ui, cleanup, onError
       },
     }),
     tokenizer: Object.freeze({ estimate: estimateTokens }),
+    llm,
     tts,
     ...(net ? { net } : {}),
   };

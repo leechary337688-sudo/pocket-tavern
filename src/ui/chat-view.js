@@ -28,6 +28,14 @@ function cloneMessage(m) {
   return { ...m, swipes: Array.isArray(m.swipes) ? [...m.swipes] : [] };
 }
 
+/** 状态/好感是给插件吃的结构化行，不占玩家的正文视觉。 */
+function visibleText(text) {
+  return String(text || '')
+    .replace(/\[(状态|好感)\]\s*\{[^\n]*\}/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function tokenLabel(n) {
   return n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`;
 }
@@ -212,6 +220,25 @@ class MessageList {
       this.scroller.scrollTo({ top: this.scroller.scrollHeight, behavior });
     });
   }
+
+  scrollToMessage(id) {
+    const index = this.messages.findIndex((m) => m.id === id);
+    if (index < 0) return false;
+    if (!this.nodes.has(id)) {
+      let top = 0;
+      for (let i = 0; i < index; i++) top += this.estimate(this.messages[i]);
+      this.scroller.scrollTop = Math.max(0, top - this.scroller.clientHeight / 3);
+      this.render({ atBottom: false });
+    }
+    requestAnimationFrame(() => {
+      const node = this.scroller.querySelector(`[data-id="${String(id).replace(/"/g, '\\"')}"]`);
+      if (!node) return;
+      node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      node.classList.add('is-jump-flash');
+      setTimeout(() => node.classList.remove('is-jump-flash'), 900);
+    });
+    return true;
+  }
 }
 
 export function mount(el, ctx) {
@@ -371,14 +398,22 @@ export function mount(el, ctx) {
     return speakerFor(msg)?.name || '角色';
   }
 
-  /** 头像状态由插件提供；宿主只认白名单状态，插件不能直接改 DOM。 */
+  /** 头像状态由插件提供；宿主只认白名单状态/自定义 class，插件不能直接改 DOM。 */
   function decorateAvatar(wrapper, speaker, msg) {
-    if (!wrapper || !loader?.getAvatarDecorations) return;
+    if (!wrapper) return;
     wrapper.querySelectorAll('.avatar-deco').forEach((node) => node.remove());
+    for (const cls of String(wrapper.dataset.decoClasses || '').split(' ').filter(Boolean)) {
+      wrapper.classList.remove(cls);
+    }
+    wrapper.dataset.decoClasses = '';
     wrapper.classList.remove('is-hurt', 'is-dead', 'is-alert');
+    const memberState = speaker?.memberState || msg?.memberState || 'active';
+    if (memberState === 'away' || memberState === 'dead') {
+      wrapper.classList.add(memberState === 'dead' ? 'is-dead' : 'is-away');
+    }
     let decorations = [];
     try {
-      decorations = loader.getAvatarDecorations({
+      decorations = loader?.getAvatarDecorations?.({
         card: speaker,
         message: msg,
         chat: engine.chat,
@@ -388,7 +423,16 @@ export function mount(el, ctx) {
       decorations = [];
     }
     for (const deco of decorations) {
-      if (deco.state && deco.state !== 'normal') wrapper.classList.add(`is-${deco.state}`);
+      if (deco.state && deco.state !== 'normal' && deco.state !== 'custom') {
+        wrapper.classList.add(`is-${deco.state}`);
+      }
+      if (deco.className) {
+        const classes = Array.isArray(deco.classNames) && deco.classNames.length ? deco.classNames : [deco.className];
+        for (const name of classes) {
+          if (name) wrapper.classList.add(name);
+        }
+        wrapper.dataset.decoClasses = `${wrapper.dataset.decoClasses} ${classes.join(' ')}`.trim();
+      }
       if (deco.badge) {
         wrapper.appendChild(h('span', {
           class: 'avatar-deco',
@@ -396,6 +440,13 @@ export function mount(el, ctx) {
           'aria-label': deco.label || '',
         }, deco.badge));
       }
+    }
+    if ((memberState === 'away' || memberState === 'dead') && !wrapper.querySelector('.avatar-deco')) {
+      wrapper.appendChild(h('span', {
+        class: 'avatar-deco avatar-deco--host',
+        title: memberState === 'dead' ? '已退场' : '暂离',
+        'aria-label': memberState === 'dead' ? '已退场' : '暂离',
+      }, memberState === 'dead' ? '✝' : '…'));
     }
   }
 
@@ -413,7 +464,7 @@ export function mount(el, ctx) {
       );
     }
     const isChar = msg.sender === 'char';
-    const textEl = h('div', { class: 'msg__text' }, msg.text || '');
+    const textEl = h('div', { class: 'msg__text' }, visibleText(msg.text));
     const cursor = h('span', { class: 'stream-cursor', hidden: !(msg.pending && generatingId === msg.id) });
     const bubble = h('div', { class: 'msg__bubble' }, textEl, cursor);
     const foot = h('div', { class: 'msg__foot' });
@@ -427,7 +478,15 @@ export function mount(el, ctx) {
     let avatar = null;
     if (isChar) {
       const speaker = speakerFor(msg);
-      avatar = h('div', { class: 'msg__avatar' }, h('img', { class: 'avatar avatar--48', alt: '', src: speaker?.avatar || 'icons/logo.svg' }));
+      avatar = h('button', {
+        class: 'msg__avatar',
+        type: 'button',
+        'aria-label': `查看${speaker?.name || '角色'}的状态`,
+        onclick: (event) => {
+          event.stopPropagation();
+          showMemberInfo(speaker, msg);
+        },
+      }, h('img', { class: 'avatar avatar--48', alt: '', src: speaker?.avatar || 'icons/logo.svg' }));
       avatar.querySelector('img').addEventListener('error', (event) => { event.target.src = 'icons/logo.svg'; });
       decorateAvatar(avatar, speaker, msg);
     }
@@ -551,7 +610,7 @@ export function mount(el, ctx) {
     updateStreamNode(node, msg) {
       const textEl = node.querySelector('.msg__text');
       if (textEl) {
-        if (msg.text) textEl.textContent = msg.text;
+        if (msg.text) textEl.textContent = visibleText(msg.text);
         else textEl.textContent = '';
       }
       const cursor = node.querySelector('.stream-cursor');
@@ -559,7 +618,7 @@ export function mount(el, ctx) {
       node.classList.add('is-pending');
       const tokenEl = node.querySelector('.msg__tokens');
       if (tokenEl) tokenEl.textContent = `≈${tokenLabel(msg?.tokenEstimate || estimateTokens(msg?.text || ''))}`;
-      if (msg?.text && textEl && !textEl.textContent) textEl.textContent = msg.text;
+      if (msg?.text && textEl && !textEl.textContent) textEl.textContent = visibleText(msg.text);
       if (!msg?.text && !node.querySelector('.msg__typing')) {
         const typing = h('span', { class: 'msg__typing' }, h('i'), h('i'), h('i'));
         node.querySelector('.msg__bubble')?.prepend(typing);
@@ -624,6 +683,42 @@ export function mount(el, ctx) {
   }
 
   // ---------------- 交互 ----------------
+  function memberCardHost() {
+    const host = h('div', { class: 'member-card-host' });
+    for (const panel of loader?.getMemberCards?.() || []) {
+      const box = h('section', { class: 'member-card' }, h('h4', { class: 'member-card__title' }, panel.title || '角色状态'));
+      try {
+        const draw = panel.render(box, card, { chat: engine.chat, members });
+        if (typeof draw === 'function') {
+          // 首次渲染已由插件完成；重绘由插件自己的事件驱动。
+        }
+      } catch (err) {
+        console.warn('[pt] member card', err);
+      }
+      host.appendChild(box);
+    }
+    return host;
+  }
+
+  function showMemberInfo(speaker, msg) {
+    if (!speaker) return;
+    const host = h('div', { class: 'card-detail member-detail' },
+      h('div', { class: 'card-detail__top' },
+        h('img', { class: 'avatar avatar--88', alt: '', src: speaker.avatar || 'icons/logo.svg' }),
+        h('div', {}, h('h2', { class: 'card-detail__name' }, speaker.name || '角色'), h('p', { class: 'card-detail__meta' }, `${({ active: '在场', away: '暂离', dead: '已退场' })[speaker.memberState] || '在场'} · ${msg?.speaker || speaker.name || ''}`))),
+      h('p', { class: 'card-detail__desc' }, speaker.description || '这个角色还没有写描述。'));
+    for (const panel of loader?.getMemberCards?.() || []) {
+      const box = h('section', { class: 'member-card' }, h('h4', { class: 'member-card__title' }, panel.title || '角色状态'));
+      try {
+        panel.render(box, speaker, { chat: engine.chat, members, message: msg });
+      } catch (err) {
+        console.warn('[pt] member card', err);
+      }
+      host.appendChild(box);
+    }
+    openOverlay({ title: '角色状态', content: host, actions: [{ label: '关闭', kind: 'primary' }] });
+  }
+
   async function showCardInfo() {
     if (!card?.name) return;
     openOverlay({
@@ -632,6 +727,7 @@ export function mount(el, ctx) {
         'div',
         { class: 'card-detail' },
         h('div', { class: 'card-detail__top' }, h('img', { class: 'avatar avatar--88', alt: '', src: card.avatar || 'icons/logo.svg' }), h('div', {}, h('h2', { class: 'card-detail__name' }, card.name), h('p', { class: 'card-detail__meta' }, card.creator ? `创作者 ${card.creator}` : '佚名创作者'), h('div', { class: 'tag-row' }, ...(card.tags || []).map((t) => h('span', { class: 'tag' }, t))))),
+        memberCardHost(),
         h('p', { class: 'card-detail__desc' }, card.description || '这个角色还没有写描述。'),
         card.personality ? h('div', { class: 'card-section' }, h('h4', {}, '性格'), h('p', {}, card.personality)) : null,
         card.scenario ? h('div', { class: 'card-section' }, h('h4', {}, '场景'), h('p', {}, card.scenario)) : null,
@@ -710,10 +806,10 @@ export function mount(el, ctx) {
       isChar ? { key: 'tts', label: '朗读', icon: 'volume' } : null,
       { key: 'delete', label: '删除', icon: 'trash', danger: true },
     ].filter(Boolean);
-    const action = await actionSheet({ title: '消息操作', subtitle: truncate(msg.text, 42), items });
+    const action = await actionSheet({ title: '消息操作', subtitle: truncate(visibleText(msg.text), 42), items });
     if (!action) return;
     if (action === 'copy') {
-      const ok = await copyText(msg.text);
+      const ok = await copyText(visibleText(msg.text));
       toast(ok ? '已复制' : '复制失败，请长按文本手动复制', { type: ok ? 'success' : 'error' });
     } else if (action === 'edit') {
       const text = await promptDialog({ title: '编辑消息', label: '内容', value: msg.text, multiline: true, confirmText: '保存' });
@@ -739,7 +835,7 @@ export function mount(el, ctx) {
         toastError(err.message);
       }
     } else if (action === 'tts') {
-      const res = sound?.speak(msg.text, { pitch: 1.1 });
+      const res = sound?.speak(visibleText(msg.text), { pitch: 1.1 });
       if (res && !res.ok) toast(res.reason, { type: 'warn', action: '去设置', onAction: () => ctx.onOpenSettings?.() });
     } else if (action === 'delete') {
       await deleteMessage(msg);
@@ -1361,6 +1457,9 @@ export function mount(el, ctx) {
   }, 800);
 
   return {
+    scrollToMessage(id) {
+      return list.scrollToMessage(String(id || ''));
+    },
     unmount() {
       disposed = true;
       for (const off of offs) off?.();

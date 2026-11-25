@@ -1,0 +1,10 @@
+{
+  "name": "好感度",
+  "id": "affection",
+  "version": "1.0.0",
+  "author": "PocketTavern",
+  "description": "记录角色与玩家、角色之间的关系数值、档位与发糖时刻。",
+  "entry": "plugin.js",
+  "minAppVersion": "0.4.0",
+  "permissions": ["storage"]
+}

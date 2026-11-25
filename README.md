@@ -3,7 +3,7 @@
 一个移动优先、安装即用的 SillyTavern 风格单页 PWA：角色卡聊天、世界书、多后端流式接入、本地插件系统，以及可自托管的创意工坊。
 原生 ES2022 + ESM，**开发态免构建**；数据只留在这台设备的 IndexedDB；没有遥测，也不会把内容发去你配置的后端之外。
 
-> 当前版本：`0.3.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布
+> 当前版本：`0.4.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布 · 0.4：剧情状态 / 好感 / 章节日记 / 剧情导演 / 两套预设世界
 > 补丁 A/B：试穿只写 `trials` + contentHash 判重/查重合并；CCv3 内嵌书、挂载优先级与同 key 冲突高亮；群聊 natural_order。
 
 ---
@@ -65,9 +65,11 @@ Chrome Android：地址栏右侧菜单 →「添加到主屏幕」/「安装应�
 │   ├── dice-log/              # 示例插件 2：骰子记录
 │   │   ├── manifest.json
 │   │   └── plugin.js
-│   └── story-state/           # 示例插件 3：剧情状态 / 头像受伤、死亡、地点
-│       ├── manifest.json
-│       └── plugin.js
+│   ├── story-status/          # 0.4 剧情状态 v2：归属/回合/成员卡/头像角标
+│   ├── affection/             # 0.4 好感度：数值/档位/发糖时刻
+│   ├── chapter-diary/         # 0.4 章节日记：15 回合摘要 / 48h 前情
+│   └── plot-director/         # 0.4 剧情导演：伏笔/节奏/糖分
+├── assets/presets/             # 0.4 预设世界 JSON（雾港夜雨 / 凤阙春深）
 ├── src/
 │   ├── main.js                # 路由、启动、主题、引导、设置装配
 │   ├── core/                  # 不依赖 UI 的纯逻辑
@@ -249,7 +251,7 @@ chat 会话显式挂载 > persona 人格 > character 卡内嵌书 > global 全�
 - 房间仍是 `chats` 表里的一条 `kind='group'` 会话，不新增数据库表；因此旧会话、备份、导出全部兼容。
 - 房间顶栏显示「房间 · N 位」，菜单里可直接改成员/规则/世界书，或继续邀请角色。
 - 单聊也可以先开，再「邀请角色 · 转为房间」；不会丢历史消息。
-- 群聊里「角色 A 提到角色 B，B 没接话」在 0.3.0 已修复：生成回合结束后会扫描角色文本，按全名匹配尚未发言的成员，插入下一棒；最多 3 人，避免自问自答/死循环。
+- 群聊里「角色 A 提到角色 B，B 没接话」在 0.3.0 修复，0.4 继续保留：生成回合结束后会扫描角色文本，按全名匹配尚未发言的成员，插入下一棒；最多 3 人，避免自问自答/死循环。
 
 ---
 
@@ -408,7 +410,13 @@ STLite.eventSource.on('chat:promptReady', ({ prompt }) => {
 | `STLite.storage(id?)` | 插件自己的 IndexedDB 命名空间；未声明 `storage` 则全部 reject；不能访问别的插件 |
 | `STLite.ui.registerPanel({icon,title,render(el)})` | 注入设置页「插件面板」；返回注销函数 |
 | `STLite.ui.registerQuickReply({label,onTap})` | 注入聊天快捷栏；最多显示 4 个，多出归「更多」 |
-| `STLite.ui.registerAvatarDecorator(resolve)` | 注册头像状态装饰器；`resolve({name, message, messages})` 返回 `{state, badge, label, title, location}`，`state` 只接受 `normal/hurt/dead/alert`；只影响头像外观，不改消息 |
+| `STLite.chat.getMembers()` | 当前会话成员（`id/name/avatar/memberState/talkativeness`）；`memberState` 为 `active/away/dead` |
+| `STLite.chat.getMounts()` | 当前组装实际挂载的世界书（用于伏笔扫描） |
+| `STLite.chat.setMemberState(id,state)` | 主持人手动改成员在场状态；会触发 `chat:memberChanged` |
+| `STLite.llm.complete(messages,{temperature,maxTokens})` | 需 `network` 权限；走当前后端、全局串行、20s 超时、失败静默返回 `null`；不写聊天记录、不进 prompt trace |
+| `STLite.ui.registerMemberCard({title,render(el,member)})` | 在角色档案里注入「单角色状态卡」；返回注销函数 |
+| `STLite.ui.jumpToMessage(id)` | 滚动到指定消息并闪一下；用于发糖/状态日志回跳 |
+| `STLite.ui.registerAvatarDecorator(resolve)` | `resolve({card,message,chat,members})` 返回 `{state,badge,label,title,location,className}`；`state` 可为 `normal/hurt/dead/alert` 或 `{badge,className}` 自定义态；只影响头像外观 |
 | `STLite.ui.toast(message)` | 宿主 toast |
 | `STLite.dice.roll('1d100+5')` | 与 `/roll` 同一个骰子引擎 |
 | `STLite.tokenizer.estimate(text)` | 轻量 token 估算 |
@@ -431,12 +439,12 @@ STLite.eventSource.on('chat:promptReady', ({ prompt }) => {
 
 这两个插件都只声明 `storage`，不联网。
 
-另有 `plugins/story-state/plugin.js`（剧情状态，0.3.0 新增）：
+0.4 内置 4 个剧情插件（都只声明自己需要的权限，不读 apiKey）：
 
-- 从最近 24 条角色消息里按关键词推断受伤/死亡，从文本里识别春灯舫/雾港/潮见市等地点；
-- 通过 `registerAvatarDecorator` 给头像加红圈「血」、灰化「✝」或琥珀「!」徽标，并刷新顶栏头像；
-- 通过 `chat:promptReady` 注入一行 `[剧情状态]`，让模型知道谁受伤/谁已死亡/当前地点；
-- 设置页面板列出每个角色的推断状态；不调用模型、不写聊天记录。头像状态是启发式，不是权威战斗系统。
+- `plugins/story-status/plugin.js`（剧情状态 v2）：26 种状态；优先解析角色文本里的 `[状态] {"target":"琥珀","add":["流血"],"turns":2}`，target 必须在场；无结构化行时，关键词只归发言者本人，绝不甩给全队。状态按回合掉层/到期，写日志，死亡免疫其它状态；注册头像装饰（多状态按 death>dot>control>buff>emotion 取最高角标）和角色状态卡（可手动移除 / 切在场·暂离·退场）。
+- `plugins/affection/plugin.js`：解析 `[好感] {"target":"player","delta":5}`，每对 -100~100，按档位显示；delta≥8 记「发糖时刻」，点记录跳到原消息。
+- `plugins/chapter-diary/plugin.js`：每 15 个用户回合用 `STLite.llm.complete` 生成 ≤120 字章节摘要；间隔超过 48 小时回来，会经 `chat:promptReady` 注入最近两章「前情提要」；可改名/删除。
+- `plugins/plot-director/plugin.js`：扫当前挂载世界书里带「真相/伏笔/暗线/秘密」的条目，列未回收伏笔（不剧透）；连续 10 条无明显转折时注入节奏提示；糖分密度 0–3 可调。
 
 ---
 
@@ -567,7 +575,13 @@ node dev/check-world-mount.mjs
 node dev/check-world-create.mjs
 node dev/check-preview-mounts.mjs
 node dev/check-v3.mjs
-node dev/check-story-state.mjs
+node dev/check-04-smoke.mjs
+node dev/check-04-status.mjs
+node dev/check-04-presets.mjs
+node dev/check-04-preset-ui.mjs
+node dev/test-04-plugins.mjs
+node dev/check-04-member-state.mjs
+node dev/check-04-affection-ui.mjs
 ```
 
 | # | 验收项 | 状态 | 证据 |
@@ -593,13 +607,21 @@ node dev/check-story-state.mjs
 | 17 | 工坊草稿自动保存/恢复，刷新不丢 | ✅ | `check-v3.mjs`：纯想法草稿恢复、生成中 7 字段卡恢复，`gen-draft-bar` 可见 |
 | 18 | 发布新作品后工坊列表可见，不被旧筛选藏住 | ✅ | `check-v3.mjs`：发布后自动跳 `#/workshop`，新标题在列；`check-gen.mjs` 也覆盖 |
 | 19 | 首页开房间；单聊中途邀请角色转房间且保留消息 | ✅ | `check-v3.mjs`：`kind=group`、2 成员、房间徽标；单聊转群前后消息数不变 |
-| 20 | 角色 A 提到 B 时 B 接话；头像随受伤/死亡变化 | ✅ | `check-v3.mjs` 9/9：`replies=["程墨白","琥珀"]`，UI 发言人正确；`check-story-state.mjs` 9/9：血/✝ 徽标、`[剧情状态]` 注入、面板状态 |
+| 20 | 角色 A 提到 B 时 B 接话；头像随受伤/死亡变化 | ✅ | `check-v3.mjs` 9/9：`replies=["程墨白","琥珀"]`，UI 发言人正确；`check-04-status.mjs` 4/4 + `test-04-plugins.mjs`：受伤/死亡/情感角标、`[剧情状态]` 注入、成员状态卡 |
 | 补 | 补丁 A：试穿只写 trials、转正幂等/判重、丢弃零残留、查重合并 | ✅ | `check-trial-conflict.mjs` 7/7、`check-dedupe.mjs` 11/11、`check-cardbook-ui.mjs` 10/10；`check-trial-discard-streaming.mjs` 5/5（流式中途丢弃 trial 不复活） |
 | 补 | 补丁 B：挂载优先级、同 key 冲突高亮、群聊成员/活跃度/内嵌书 | ✅ | `check-preview-mounts.mjs` 5/5、`check-group-ui.mjs` 10/10、`check-world-hash.mjs` 5/5、`check-world-mount.mjs` 11/11 |
+| 23 | 一人受伤不污染全队 | ✅ | `test-04-plugins.mjs` 14/14：琥珀流血、程墨白无状态；关键词只归发言者 |
+| 24 | `[状态]` 回合递减、到期移除并写日志 | ✅ | `test-04-plugins.mjs`：流血 `turns=3` 经 3 回合移除，`log[0].type=expire` |
+| 25 | 情感角标 + 多状态优先级 | ✅ | `test-04-plugins.mjs`：心动 💗；心动+流血取 🩸（death>dot>control>buff>emotion） |
+| 26 | 好感 +5 增长、60 跨档、delta≥8 发糖 | ✅ | `test-04-plugins.mjs`：12×5=60；delta 10 记发糖条目 |
+| 27 | 15 回合章节摘要、48h 前情提要 | ✅ | `test-04-plugins.mjs`：第 15 回合生成「摘要正文」；49h 旧会话 `chat:promptReady` 注入【前情提要】 |
+| 28 | 预设载入 12 卡 + 主书 + 内嵌书、重复幂等 | ✅ | `check-04-presets.mjs` 8/8、`check-04-preset-ui.mjs` 6/6；雾港 12 卡/22 条、凤阙 12 卡/18 条 |
+| 29 | dead 不进骰池、点名 toast、回归恢复 | ✅ | `check-04-member-state.mjs` 8/8：dead 被点名只由琥珀接话，toast「已退场（可在回忆中相见）」；切回 active 后墨羽恢复发言 |
+| 30 | 三插件禁用零残留、旧数据不崩 | ✅ | `check-04-member-state.mjs` 8/8：四插件禁用后面板/头像角标为 0；重新启用无 pageerror |
 
 补充：
 
-- 运行时 JS/JSON（`src/` + `plugins/`，共 45 个文件）实测 raw 636.7KB / gzip 165.7KB，满足首屏 JS gzip < 300KB。
+- 运行时 JS/JSON（`src/` + `plugins/`，共 54 个文件）实测 raw 708.7KB / gzip 210.5KB，满足首屏 JS gzip < 300KB。
 - 320 / 360 / 390 / 430 宽均无横向滚动（`overflow=0`）；320 下快捷栏自动折成两行。
 - 触达审计：首页/卡库/世界书/聊天/设置/工坊/生成器全部 0 个 <44×44。
 - 会话列表右滑删除：`check-swipe-delete.mjs` 输出 `SWIPE DELETE OK`（右滑 96px 露出删除，确认后删掉）。
@@ -614,7 +636,7 @@ node dev/check-story-state.mjs
 - **群聊是顺序发言**：每轮最多 3 位角色依次生成（不是并行/同屏抢话）；`natural_order` 的点名规则只匹配成员名全词，昵称/代词不触发。
 - **角色互聊链受 3 人上限**：A 的文本提到 B 时 B 会被排到下一棒，但如果一轮已经排满 3 人、或 B 已在本轮发过言，就不会再追加；避免自问自答和无限套娃。
 - **房间仍是会话**：一个房间 = 一本主书 + 角色；没有独立的“世界/房间”数据表，跨会话不会共享上下文，也不存在“多本书全局全开”。真正的串台只会发生在手动叠加多本主书或全局书时。
-- **头像状态是启发式**：story-state 插件只按最近 24 条文本关键词推断受伤/死亡/地点，不是战斗系统；状态会跟着会话全局显示，不会逐条消息回放历史状态。
+- **头像状态是启发式与结构化混合**：0.4 story-status 优先读 `[状态]`，没有结构化行时才按关键词归给该发言者；它仍然不是权威战斗系统，历史消息只按最近 60 条回扫。状态会跟着会话全局显示，不会逐条消息回放历史状态。
 - **内容哈希判重是“内容级”的**：字段完全相同的内嵌书/世界书会按设计合并；确实要保留两个一模一样的世界书时，得改一个字段再另存。
 - **旧幽灵副本不自动删**：v0.2 已修新导入；历史遗留的同名副本请在「设置 → 数据 → 查重合并」里手动合并，删前会展示绑定会话数。
 - **远程插件安装未实现**：市场只读本地/远程 JSON 索引，不会下载代码；设置页有明确文案。
@@ -662,3 +684,59 @@ node --check src/ext/*.js
 - `prefers-reduced-motion` 下会关闭大部分动画。
 
 如果只想快速看效果：`node dev/mock-server.mjs` → 打开 `http://127.0.0.1:8788/` → 跳过引导 → 点「与琥珀的雨夜」→ 在设置里填 mock 连接 → 发送。
+
+---
+
+## 十四、0.4 剧情层（0.4.0）
+
+0.4 在房间模型上继续往「跑剧情」走，不新增 IndexedDB store，插件数据走 `extdata`。
+
+### 14.1 房间与成员状态
+
+- 一个房间 = 1 本主世界书 + 几位角色。单聊也可在「更多 → 世界书挂载」挂 1 本馆藏主书；群聊可在「启用多本世界书」高级模式挂最多 8 本。卡片内嵌书不占名额，角色在场才激活。
+- 群聊自然顺序：上一条整词点名 → 被点名者必接；其余成员按 `talkativeness` 掷骰；`allow_self_responses` 控制连说。角色 A 的生成文本里提到 B，B 会在下一棒接话（每轮最多 3 位）。
+- 成员状态 `active / away / dead`：dead 不进骰池，被点名时提示「TA 已退场（可在回忆中相见）」；away/dead 头像灰化；角色状态卡可一键切回在场。
+
+### 14.2 结构化状态与好感
+
+角色可以输出（只认单行 JSON）：
+
+```text
+[状态] {"target":"琥珀","add":["流血"],"stacks":2,"turns":3,"note":"玻璃划伤"}
+[好感] {"target":"player","delta":5}
+```
+
+- 状态：26 种，`add/remove` 可多个；`turns` 按 `chat:generateAfter` 回合递减，到期移除并写日志；死亡免疫其它状态；护盾到期提示碎裂。
+- 好感：每对 `-100..100`；档位「敌意/陌生/信任/心动/挚爱」；`delta≥8` 记发糖时刻，可点回原消息。
+- 归属规则：结构化 payload 的 `target` 必须当前在场；无结构化的关键词只归该消息发言者本人；不会出现「一人受伤全队流血」。
+- 正文里不会显示 JSON 行（复制/朗读/操作菜单也走清洗文本）。
+
+### 14.3 预设世界
+
+入口：设置 → 数据与备份 →「载入预设世界」，或首次引导第一步的「载入一套预设世界」。预设**不会自动写库**，必须点「载入」并确认。
+
+| id | 名称 | 体量 | 内容分级 |
+|---|---|---|---|
+| `fog-harbor` | 雾港夜雨 | 12 卡 / 主书 22 条 / 12 本内嵌书 / 4 快捷回复 | general（男性向悬疑·情感） |
+| `phoenix-palace` | 凤阙春深 | 12 卡 / 主书 18 条 / 12 本内嵌书 / 4 快捷回复 | general（女性向权谋·情感） |
+
+- 同一 preset 重复载入按 `contentHash` 判重：同版本直接跳过，旧版本原位更新；不会产生同名副本。
+- 预设文件：`assets/presets/fog-harbor.json`、`assets/presets/phoenix-palace.json`；生成脚本 `dev/make-presets.mjs`。
+- 主书分三层：常识层（默认注入）、真相层（`selective + keysecondary`，命中才注入）、节拍层（`comment` 第 N 幕，不直接注入）。卡面不写反转秘密。
+
+### 14.4 0.4 验收脚本
+
+```bash
+node dev/check-04-smoke.mjs          # 插件加载 / 设置卡
+node dev/check-04-status.mjs         # 状态归属 + 档案状态卡
+node dev/check-04-presets.mjs        # 两套预设 / 幂等
+node dev/check-04-preset-ui.mjs      # 设置入口 / 选择器 / 写库
+node dev/test-04-plugins.mjs         # 23–27 插件级：归属/回合/优先级/好感/日记
+node dev/check-04-member-state.mjs   # 29/30：dead 调度、回归、禁用清理
+node dev/check-04-affection-ui.mjs   # 26：好感档位/发糖面板
+node dev/check-04-320.mjs            # 320 宽预设选择器/设置溢出
+```
+
+验收 23–30 对应：23 单元（归属）、24 单元（回合/日志）、25 单元（情感/优先级）、26 单元（好感/发糖）、27 单元（15 回合/48h）、28 预设、29/30 浏览器。所有插件都是内置示例，可以单独开关；禁用后不挂载面板、不装饰头像，旧数据留在 `extdata` 但主程序不崩。
+
+> 注意：源码 0.4.0 与 APK/GitHub 的发布节奏分开；改完源码后重新执行 `node dev/mock-server.mjs`，APK 需要另行 `assembleDebug`。

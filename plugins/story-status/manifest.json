@@ -1,0 +1,10 @@
+{
+  "name": "剧情状态",
+  "id": "story-status",
+  "version": "2.0.0",
+  "author": "PocketTavern",
+  "description": "按角色追踪伤势、情感与回合状态，提供状态面板、日志和头像角标。",
+  "entry": "plugin.js",
+  "minAppVersion": "0.4.0",
+  "permissions": ["storage"]
+}

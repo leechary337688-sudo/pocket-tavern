@@ -17,6 +17,7 @@ const STRIP_KEYS = new Set([
   'builtin',
   'character_book',
   'character_book_id',
+  'presetId',
   'extensions',
 ]);
 

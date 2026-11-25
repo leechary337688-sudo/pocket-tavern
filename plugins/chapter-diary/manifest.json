@@ -1,0 +1,10 @@
+{
+  "name": "章节日记",
+  "id": "chapter-diary",
+  "version": "1.0.1",
+  "author": "PocketTavern",
+  "description": "每 15 个回合生成章节摘要，久别回来先看前情提要。",
+  "entry": "plugin.js",
+  "minAppVersion": "0.4.0",
+  "permissions": ["storage", "network"]
+}

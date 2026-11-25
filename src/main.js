@@ -2,10 +2,12 @@
 import { Repo } from './data/repo.js';
 import { createBus } from './ext/bus.js';
 import { PluginHost } from './ext/loader.js';
+import { createLlmQueue } from './ext/llm-queue.js';
 import { ChatEngine } from './core/chat-engine.js';
 import { openOverlay, closeAllOverlays, actionSheet } from './ui/overlay.js';
 import { toast, toastError } from './ui/toast.js';
 import { icon, logoMark } from './ui/icons.js';
+import { openPresetPicker } from './ui/preset-picker.js';
 import { h, clear } from './ui/dom.js';
 import { sound } from './ui/sound.js';
 import { DiceModal } from './ui/dice.js';
@@ -19,7 +21,7 @@ import { mount as mountGen } from './ui/gen-view.js';
 import { openPublishFlow } from './ui/publish-view.js';
 import { openGroupEditor } from './ui/group-view.js';
 
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.4.0';
 const bootScreen = document.getElementById('boot-screen');
 const bootFill = bootScreen?.querySelector('.boot-screen__fill');
 const bootLabel = bootScreen?.querySelector('.boot-screen__label');
@@ -37,6 +39,7 @@ let loader = null;
 let settingsView = null;
 let diceModal = null;
 let current = null;
+let chatViewApi = null;
 let currentRoute = '';
 let navToken = 0;
 let theme = localStorage.getItem('pt:theme') || 'dark';
@@ -99,6 +102,7 @@ function unmountCurrent() {
     console.warn('[pt] unmount', err);
   }
   current = null;
+  chatViewApi = null;
   clear(viewRoot);
 }
 
@@ -234,6 +238,7 @@ async function renderRoute() {
           },
           openDice: (expr, onResult) => diceModal?.open({ expr: expr || '1d20', auto: true, onResult }),
         });
+        chatViewApi = current;
       } catch (err) {
         if (token !== navToken) return;
         toastError(err.message || '找不到这个会话');
@@ -424,6 +429,21 @@ function showOnboarding() {
         'div',
         { class: 'onboard__actions' },
         h('button', { class: 'btn btn--primary btn--block', type: 'button', onclick: data.onAction }, data.action),
+        step === 0
+          ? h('button', {
+              class: 'btn btn--ghost btn--block',
+              type: 'button',
+              onclick: () => openPresetPicker({
+                repo,
+                onLoaded: async () => {
+                  await saveLocalSettings({ onboardingDone: true });
+                  closeAllOverlays();
+                  navigate('#/home');
+                  toast('预设世界已摆好，去卡库挑一位开聊', { type: 'success' });
+                },
+              }),
+            }, '或载入一套预设世界（雾港 / 凤阙）')
+          : null,
         h(
           'div',
           { class: 'onboard__nav' },
@@ -468,10 +488,17 @@ async function boot() {
     sound.update(settings.sound);
     setBoot(26, '摆好角色卡…');
 
+    const llmQueue = createLlmQueue({
+      getSettings: () => repo.settings || settings || {},
+      onError: () => {},
+    });
     const bridge = {
       getChatSnapshot: () => engine.getSnapshot(),
       getCurrentCard: () => engine.card || {},
       getSettings: () => repo.sanitizedSettings(),
+      llmComplete: (messages, opts) => llmQueue.complete(messages, opts),
+      setMemberState: (memberId, state) => engine.setMemberState(memberId, state),
+      jumpToMessage: (messageId) => chatViewApi?.scrollToMessage?.(messageId),
       ttsSpeak: (text, opts) => sound.speak(text, opts),
       toast: (msg) => toast(String(msg || '')),
     };

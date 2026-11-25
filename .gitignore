@@ -3,6 +3,7 @@ dev/*.png
 dev/backup-test.json
 dev/lighthouse-pwa.json
 dev/export-test.ptpack
+dev/*.log
 
 # 系统与依赖
 .DS_Store

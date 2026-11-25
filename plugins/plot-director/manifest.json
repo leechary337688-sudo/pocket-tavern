@@ -1,0 +1,10 @@
+{
+  "name": "剧情导演",
+  "id": "plot-director",
+  "version": "1.0.0",
+  "author": "PocketTavern",
+  "description": "盯住未回收的伏笔与连续平淡，必要时提醒节奏。",
+  "entry": "plugin.js",
+  "minAppVersion": "0.4.0",
+  "permissions": ["storage"]
+}
