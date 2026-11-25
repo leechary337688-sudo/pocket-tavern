@@ -5,6 +5,10 @@
 
 > 当前版本：`0.4.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布 · 0.4：剧情状态 / 好感 / 章节日记 / 剧情导演 / 两套预设世界
 > 补丁 A/B：试穿只写 `trials` + contentHash 判重/查重合并；CCv3 内嵌书、挂载优先级与同 key 冲突高亮；群聊 natural_order。
+>
+> **在线版**：https://leechary337688-sudo.github.io/pocket-tavern/
+> **安装包 0.4.0**：https://github.com/leechary337688-sudo/pocket-tavern/releases/tag/v0.4.0
+> **旧版 0.3.0**：https://github.com/leechary337688-sudo/pocket-tavern/releases/tag/v0.3.0
 
 ---
 
