@@ -1,5 +1,5 @@
 /* 袖珍酒馆 Service Worker — 只缓存同源应用壳；绝不缓存 API 响应、密钥或聊天内容。 */
-const VERSION = '0.3.0';
+const VERSION = '0.4.1';
 const CACHE = `pt-shell-v${VERSION}`;
 const SHELL = [
   './',
@@ -21,9 +21,11 @@ const SHELL = [
   './src/data/content-hash.js',
   './src/data/repo.js',
   './src/data/seed.js',
+  './src/data/preset-loader.js',
   './src/ext/bus.js',
   './src/ext/loader.js',
   './src/ext/stlite.js',
+  './src/ext/llm-queue.js',
   './src/workshop/ai-gen.js',
   './src/workshop/packer.js',
   './src/workshop/registry.js',
@@ -43,13 +45,22 @@ const SHELL = [
   './src/ui/gen-view.js',
   './src/ui/group-view.js',
   './src/ui/publish-view.js',
+  './src/ui/preset-picker.js',
   './plugins/index.json',
   './plugins/token-counter/manifest.json',
   './plugins/token-counter/plugin.js',
   './plugins/dice-log/manifest.json',
   './plugins/dice-log/plugin.js',
-  './plugins/story-state/manifest.json',
-  './plugins/story-state/plugin.js',
+  './plugins/story-status/manifest.json',
+  './plugins/story-status/plugin.js',
+  './plugins/affection/manifest.json',
+  './plugins/affection/plugin.js',
+  './plugins/chapter-diary/manifest.json',
+  './plugins/chapter-diary/plugin.js',
+  './plugins/plot-director/manifest.json',
+  './plugins/plot-director/plugin.js',
+  './assets/presets/fog-harbor.json',
+  './assets/presets/phoenix-palace.json',
   './icons/logo.svg',
   './icons/favicon-32.png',
   './icons/icon-192.png',

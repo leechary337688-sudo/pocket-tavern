@@ -153,7 +153,7 @@ export function defaultSettings() {
       userPitch: 1.0,
     },
     plugins: {
-      enabled: ['token-counter', 'dice-log', 'story-state'],
+      enabled: ['token-counter', 'dice-log', 'story-status', 'affection'],
       marketUrl: '',
     },
     quickReplies: [

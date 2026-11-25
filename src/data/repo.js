@@ -20,7 +20,7 @@ import { hashCard, hashWorld, shortHash } from './content-hash.js';
 import { normalizeCharacterBook, toCharacterBook } from '../core/card-codec.js';
 
 export const APP_NAME = 'PocketTavern';
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
 
 function nowIso() {
   return new Date().toISOString();
@@ -146,12 +146,15 @@ export class Repo {
       stored = await dbGet(STORES.settings, 'app');
     }
     this.settings = normalizeSettings(stored);
-    // 0.3.0 新增内置插件：老用户只自动引入一次；之后用户手动关掉不会被重新打开。
-    if (!this.settings.plugins.storyStateKnown) {
-      if (!this.settings.plugins.enabled.includes('story-state')) {
-        this.settings.plugins.enabled.push('story-state');
-      }
+    // 0.4.0 内置插件换代：移除旧 story-state，引入 story-status / affection 一次。
+    if (!this.settings.plugins.v04Known) {
+      const enabled = new Set(this.settings.plugins.enabled);
+      enabled.delete('story-state');
+      enabled.add('story-status');
+      enabled.add('affection');
+      this.settings.plugins.enabled = [...enabled];
       this.settings.plugins.storyStateKnown = true;
+      this.settings.plugins.v04Known = true;
       await dbPut(STORES.settings, this.settings);
     }
     // 修正演示会话可能缺失的 tokenEstimate

@@ -25,15 +25,51 @@
       "builtin": true
     },
     {
-      "id": "story-state",
+      "id": "story-status",
       "name": "剧情状态",
+      "version": "2.0.0",
+      "author": "PocketTavern",
+      "description": "按人记录伤势、情绪与退场状态，给出头像角标与状态卡。",
+      "entry": "plugin.js",
+      "minAppVersion": "0.4.0",
+      "permissions": ["storage"],
+      "icon": "🩸",
+      "builtin": true
+    },
+    {
+      "id": "affection",
+      "name": "好感度",
       "version": "1.0.0",
       "author": "PocketTavern",
-      "description": "从聊天里的伤势/死亡/地点关键词推断角色状态，给头像加标记，并把状态写进下一轮提示词。",
+      "description": "记录角色关系数值、档位与发糖时刻。",
       "entry": "plugin.js",
-      "minAppVersion": "0.3.0",
-      "permissions": [],
-      "icon": "🎭",
+      "minAppVersion": "0.4.0",
+      "permissions": ["storage"],
+      "icon": "💗",
+      "builtin": true
+    },
+    {
+      "id": "chapter-diary",
+      "name": "章节日记",
+      "version": "1.0.1",
+      "author": "PocketTavern",
+      "description": "每 15 个回合生成章节摘要，久别回来先看前情提要。",
+      "entry": "plugin.js",
+      "minAppVersion": "0.4.0",
+      "permissions": ["storage", "network"],
+      "icon": "📖",
+      "builtin": true
+    },
+    {
+      "id": "plot-director",
+      "name": "剧情导演",
+      "version": "1.0.0",
+      "author": "PocketTavern",
+      "description": "盯住未回收的伏笔与连续平淡，必要时提醒节奏。",
+      "entry": "plugin.js",
+      "minAppVersion": "0.4.0",
+      "permissions": ["storage"],
+      "icon": "🎬",
       "builtin": true
     }
   ]

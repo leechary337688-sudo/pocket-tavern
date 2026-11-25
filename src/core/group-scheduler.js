@@ -86,12 +86,23 @@ export function planSpeakers({
   rng = Math.random,
   defaultTalkativeness = 0.5,
 } = {}) {
-  const alive = (members || []).filter((m) => m && m.id);
-  if (!alive.length) return { mode, order: [], plan: [] };
+  const all = (members || []).filter((m) => m && m.id);
+  const alive = all.filter((m) => (m.memberState || 'active') === 'active');
+  if (!alive.length) {
+    const blockedMentions = findMentions(userInput, all)
+      .filter((m) => (m.memberState || 'active') === 'dead')
+      .map((m) => ({ cardId: m.id, name: m.name, memberState: 'dead' }));
+    return { mode, order: [], plan: [], blockedMentions };
+  }
   const last = lastSpeakerOf(messages);
-  const mentioned = findMentions(userInput, alive);
+  const mentionedAll = findMentions(userInput, all);
+  const blockedMentions = mentionedAll
+    .filter((m) => (m.memberState || 'active') === 'dead')
+    .map((m) => ({ cardId: m.id, name: m.name, memberState: 'dead' }));
+  const mentioned = mentionedAll.filter((m) => (m.memberState || 'active') === 'active');
   const plan = [];
   const used = new Set();
+  const result = (extra = {}) => ({ mode, order: alive, plan, blockedMentions, ...extra });
 
   const take = (member, reason, extra = {}) => {
     if (!member || used.has(member.id)) return;
@@ -102,7 +113,7 @@ export function planSpeakers({
   if (mode === 'mention') {
     mentioned.forEach((m) => take(m, '被点名'));
     if (!plan.length) take(alive[0], '没人被点名，默认第一位');
-    return { mode, order: alive, plan };
+    return result();
   }
 
   if (mode === 'round_robin') {
@@ -111,14 +122,14 @@ export function planSpeakers({
       const next = alive[(idx + 1 + r + alive.length) % alive.length];
       take(next, '轮流发言');
     }
-    return { mode, order: alive, plan };
+    return result();
   }
 
   if (mode === 'director') {
     const pool = allowSelfResponses || !last ? alive : alive.filter((m) => m.id !== last.id);
     const pick = pool[Math.floor(rng() * pool.length)] || alive[0];
     take(pick, '导演随机指定');
-    return { mode, order: alive, plan };
+    return result();
   }
 
   // natural_order
@@ -147,7 +158,7 @@ export function planSpeakers({
   // ③ 全场安静时兜底：让好感最高（或第一位）的人接一句，避免卡死在用户这
   if (!plan.length) take(alive[0], '没人接话，兜底点名');
 
-  return { mode, order: alive, plan };
+  return result();
 }
 
 /** 群聊卡片的默认 talkativeness（0–1，默认 0.5）。 */
