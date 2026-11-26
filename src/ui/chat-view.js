@@ -274,7 +274,8 @@ export function mount(el, ctx) {
   function syncRoomBadge() {
     const isRoom = (chatInfo.kind || engine.kind) === 'group';
     roomBadge.hidden = !isRoom;
-    roomBadge.textContent = `房间 · ${engine.members?.length || chatInfo.memberIds?.length || 0} 位`;
+    const n = engine.members?.length || chatInfo.memberIds?.length || 0;
+    roomBadge.textContent = `房间 · ${n} 位${chatInfo.agentMode ? ' · Agent' : ''}`;
   }
 
   async function openGroupSettings() {
@@ -1197,6 +1198,10 @@ export function mount(el, ctx) {
         const tr = result.trace;
         const total = tr.totalTokens;
         const available = tr.budget?.available || tr.available;
+        if (tr.agent?.viewerName) {
+          content.appendChild(h('p', { class: 'muted small preview-agent-note' },
+            `Agent 视角：${tr.agent.viewerName} · 别人以【角色名】作为 user 注入，只有自己的话是 assistant`));
+        }
         content.appendChild(
           h(
             'div',

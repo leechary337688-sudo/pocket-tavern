@@ -1,5 +1,5 @@
 /* 袖珍酒馆 Service Worker — 只缓存同源应用壳；绝不缓存 API 响应、密钥或聊天内容。 */
-const VERSION = '0.4.1';
+const VERSION = '0.5.0';
 const CACHE = `pt-shell-v${VERSION}`;
 const SHELL = [
   './',
@@ -14,6 +14,7 @@ const SHELL = [
   './src/core/mount-resolver.js',
   './src/core/group-scheduler.js',
   './src/core/prompt-builder.js',
+  './src/core/agent-prompt.js',
   './src/core/sampler.js',
   './src/core/sse-parser.js',
   './src/core/tokenizer-lite.js',

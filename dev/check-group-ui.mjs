@@ -78,9 +78,9 @@ const info = await page.evaluate(async (id) => {
   const repo = new Repo();
   await repo.init();
   const chat = await repo.getChat(id);
-  return { kind: chat?.kind, members: chat?.memberIds?.length, title: chat?.title, count: chat?.messages?.length };
+  return { kind: chat?.kind, members: chat?.memberIds?.length, title: chat?.title, count: chat?.messages?.length, agentMode: chat?.agentMode };
 }, chatId);
-check('会话存为群聊/两成员', info.kind === 'group' && info.members === 2, JSON.stringify(info));
+check('会话存为群聊/两成员/Agent 默认开', info.kind === 'group' && info.members === 2 && info.agentMode === true, JSON.stringify(info));
 
 await page.locator('.composer__input').fill('程墨白，你怎么看这局？');
 await page.locator('button[aria-label="发送"]').click();
