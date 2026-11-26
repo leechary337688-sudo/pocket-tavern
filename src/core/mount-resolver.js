@@ -48,6 +48,7 @@ export function resolveMounts({
   settings = {},
   persona = null,
   worlds = [],
+  viewerCardId = '',
 } = {}) {
   const byId = new Map();
   for (const w of worlds || []) if (w && w.id) byId.set(w.id, w);
@@ -112,8 +113,10 @@ export function resolveMounts({
 
   // 3) 角色级（含内嵌书）。
   //    单聊：只有当前角色在场；群聊：只有成员在场。离场角色的书坚决不挂。
+  //    Agent 模式传 viewerCardId：只把当前发言人自己的角色书放进本次 prompt。
   for (const card of cards || []) {
     if (!card) continue;
+    if (viewerCardId && card.id !== viewerCardId) continue;
     if (isGroup && !memberSet.has(card.id)) continue;
     const book = cardBooks?.[card.id];
     if (book) push(book, 'character', { reason: `${card.name || '角色'}的内嵌书`, cardId: card.id });

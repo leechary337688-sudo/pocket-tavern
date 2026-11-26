@@ -20,7 +20,7 @@ import { hashCard, hashWorld, shortHash } from './content-hash.js';
 import { normalizeCharacterBook, toCharacterBook } from '../core/card-codec.js';
 
 export const APP_NAME = 'PocketTavern';
-export const APP_VERSION = '0.4.0';
+export const APP_VERSION = '0.5.0';
 
 function nowIso() {
   return new Date().toISOString();
@@ -117,6 +117,7 @@ function summarizeChat(chat) {
     id: chat.id,
     cardId: chat.cardId,
     kind: chat.kind === 'group' ? 'group' : 'single',
+    agentMode: Boolean(chat.agentMode),
     worldIds: Array.isArray(chat.worldIds) ? chat.worldIds : [],
     memberIds: Array.isArray(chat.memberIds) ? chat.memberIds : [],
     title: chat.title || '未命名会话',
@@ -381,7 +382,7 @@ export class Repo {
     return chat || null;
   }
 
-  async createChat(card, { title, messages, demo = false, worldIds = null, memberIds = null, kind = 'single', mode = '', memberState = null, allowSelfResponses = false, advancedWorlds = false } = {}) {
+  async createChat(card, { title, messages, demo = false, worldIds = null, memberIds = null, kind = 'single', mode = '', memberState = null, allowSelfResponses = false, advancedWorlds = false, agentMode = false } = {}) {
     const chat = {
       id: makeId('chat'),
       cardId: card?.id || (memberIds || [])[0] || '',
@@ -394,6 +395,7 @@ export class Repo {
       memberState: memberState && typeof memberState === 'object' ? memberState : {},
       allowSelfResponses: Boolean(allowSelfResponses),
       advancedWorlds: Boolean(advancedWorlds),
+      agentMode: Boolean(agentMode),
       title: title || `与${card?.name || '角色'}的对话`,
       messages: messages || (card ? [greetingMessage(card)] : []),
       createdAt: nowIso(),
@@ -435,6 +437,7 @@ export class Repo {
       memberState: sourceChat.memberState ? { ...sourceChat.memberState } : {},
       allowSelfResponses: Boolean(sourceChat.allowSelfResponses),
       advancedWorlds: Boolean(sourceChat.advancedWorlds),
+      agentMode: Boolean(sourceChat.agentMode),
       speaker: sourceChat.speaker || card?.id || '',
       mode: sourceChat.mode || '',
       title: title || `分支 · ${sourceChat.title || '会话'}`,

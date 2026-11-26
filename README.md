@@ -3,14 +3,10 @@
 一个移动优先、安装即用的 SillyTavern 风格单页 PWA：角色卡聊天、世界书、多后端流式接入、本地插件系统，以及可自托管的创意工坊。
 原生 ES2022 + ESM，**开发态免构建**；数据只留在这台设备的 IndexedDB；没有遥测，也不会把内容发去你配置的后端之外。
 
-> 当前版本：`0.4.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布 · 0.4：剧情状态 / 好感 / 章节日记 / 剧情导演 / 两套预设世界
+> 当前版本：`0.5.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布 · 0.4：剧情状态 / 好感 / 章节日记 / 剧情导演 / 两套预设世界 · 0.5：每个角色一个独立上下文的 Agent 房间
 > 补丁 A/B：试穿只写 `trials` + contentHash 判重/查重合并；CCv3 内嵌书、挂载优先级与同 key 冲突高亮；群聊 natural_order。
 >
-> **在线版**：https://leechary337688-sudo.github.io/pocket-tavern/
-> **安装包 0.4.0**：https://github.com/leechary337688-sudo/pocket-tavern/releases/tag/v0.4.0
-> **电脑版 / 本地模型进阶**：见 [advanced.md](./advanced.md)；免安装电脑版在 Release 资产 `PocketTavern-0.4.0-desktop.zip`
-> **深入玩法**：见 [玩法与调教.md](./玩法与调教.md)（模型/采样、角色卡与世界书高阶、群聊诊断、插件制作、声音、成人向边界）
-> **旧版 0.3.0**：https://github.com/leechary337688-sudo/pocket-tavern/releases/tag/v0.3.0
+> 在线试玩：https://leechary337688-sudo.github.io/pocket-tavern/ · 0.5.0 APK：[Release v0.5.0](https://github.com/leechary337688-sudo/pocket-tavern/releases/tag/v0.5.0)（0.4.0、0.3.0 保留作回滚）
 
 ---
 
@@ -589,6 +585,9 @@ node dev/test-04-plugins.mjs
 node dev/check-04-member-state.mjs
 node dev/check-04-affection-ui.mjs
 node dev/check-04-320.mjs
+node dev/check-agent-prompt.mjs
+node dev/check-agent-ui.mjs
+node dev/check-agent-live.mjs
 ```
 
 | # | 验收项 | 状态 | 证据 |
@@ -625,10 +624,16 @@ node dev/check-04-320.mjs
 | 28 | 预设载入 12 卡 + 主书 + 内嵌书、重复幂等 | ✅ | `check-04-presets.mjs` 8/8、`check-04-preset-ui.mjs` 6/6；雾港 12 卡/22 条、凤阙 12 卡/18 条 |
 | 29 | dead 不进骰池、点名 toast、回归恢复 | ✅ | `check-04-member-state.mjs` 8/8：dead 被点名只由琥珀接话，toast「已退场（可在回忆中相见）」；切回 active 后墨羽恢复发言 |
 | 30 | 三插件禁用零残留、旧数据不崩 | ✅ | `check-04-member-state.mjs` 8/8：四插件禁用后面板/头像角标为 0；重新启用无 pageerror |
+| 31 | Agent 模式下每个角色只看到自己的卡与自己的历史 | ✅ | `check-agent-prompt.mjs` 10/10：system 只含当前卡；自己的话是 assistant，别人的话是带【名】的 user |
+| 32 | A 提到 B 时 B 接话，但 A/B 各自视角正确 | ✅ | `check-agent-live.mjs` 7/7：同一轮 2 个请求，第二个请求把阿岚标成【阿岚】user，第一 Agent 保留自己的 assistant 开场 |
+| 33 | 每个 Agent 只挂自己的内嵌书，私密设定不串 | ✅ | `check-agent-prompt.mjs`：A 的 `mounts.character` 只含 A 的内嵌书，不含 B 的 |
+| 34 | 单聊路径不受 Agent 模式影响 | ✅ | `check-v3.mjs` 9/9、`check-patch-v2.mjs` 10/10；Agent 逻辑只在 `kind==='group' && agentMode` 启用 |
+| 35 | 单轮最多 3 个 Agent，且当前用户输入不重复 | ✅ | `check-agent-live.mjs`：一轮 2 个请求，第一个请求只有一条当前用户消息；旧路径也去掉历史末尾的重复输入 |
+| 36 | 旧群聊保持旧逻辑，可手动升级 Agent | ✅ | `check-agent-ui.mjs` 8/8：旧房无 Agent 徽标、开关默认关；手动开启后写回 `agentMode=true` 并显示徽标 |
 
 补充：
 
-- 运行时 JS/JSON（`src/` + `plugins/`，共 54 个文件）实测 raw 708.7KB / gzip 210.5KB，满足首屏 JS gzip < 300KB。
+- 运行时 JS/JSON（`src/` + `plugins/`，共 54 个文件）实测 raw 622.6KB / gzip 200.6KB，满足首屏 JS gzip < 300KB。
 - 320 / 360 / 390 / 430 宽均无横向滚动（`overflow=0`）；320 下快捷栏自动折成两行。
 - 触达审计：首页/卡库/世界书/聊天/设置/工坊/生成器全部 0 个 <44×44。
 - 会话列表右滑删除：`check-swipe-delete.mjs` 输出 `SWIPE DELETE OK`（右滑 96px 露出删除，确认后删掉）。
@@ -746,4 +751,43 @@ node dev/check-04-320.mjs            # 320 宽预设选择器/设置溢出
 
 验收 23–30 对应：23 单元（归属）、24 单元（回合/日志）、25 单元（情感/优先级）、26 单元（好感/发糖）、27 单元（15 回合/48h）、28 预设、29/30 浏览器。所有插件都是内置示例，可以单独开关；禁用后不挂载面板、不装饰头像，旧数据留在 `extdata` 但主程序不崩。
 
-> 注意：源码 0.4.0 与 APK/GitHub 的发布节奏分开；改完源码后重新执行 `node dev/mock-server.mjs`，APK 需要另行 `assembleDebug`。
+> 注意：源码 0.5.0 与 APK/GitHub 的发布节奏分开；改完源码后重新执行 `node dev/mock-server.mjs`，APK 需要另行 `assembleDebug`。
+
+---
+
+## 十五、0.5 多 Agent 群聊（0.5.0）
+
+0.4 的群聊共享一条消息流，所有角色历史都映射成 `assistant`，模型很容易把“谁说的话”混在一起。0.5 不改房间结构，只改每个角色看到的提示词：同一间房，每个角色按自己的视角独立组装。
+
+### 15.1 规则
+
+- 新开的房间默认 `agentMode=true`；旧房间 `agentMode=false`，在「群聊成员与规则」里手动打开，聊天记录不迁移、不重写。
+- 对当前发言人 A：
+  - A 自己的历史 → `assistant`；
+  - 其他人的历史 → `user`，文本前加 `【角色名】`；
+  - 玩家 → `user`；
+  - A 的角色卡、A 的内嵌书/私设、公共主书/人格/全局书进 system；别人的卡不喂第一人称。
+- 连续的非 assistant 消息会合并成一个 user 块，兼容 Claude/Gemini 不接受连续同角色的限制。
+- 一轮最多 3 位发言人；点名→必接、其余按 `talkativeness` 掷骰、`allow_self_responses` 不变。
+- 只过滤当前发言人的内嵌书；会话主书、人格书、全局书仍共享。
+- 正文预览会显示「Agent 视角：X」；插件 `chat:promptReady` 仍可改 prompt，事件里带 `agentId/agentName`。
+
+### 15.2 文件
+
+| 文件 | 作用 |
+|---|---|
+| `src/core/agent-prompt.js` | 视角映射、连续 user 合并、Agent prompt + trace |
+| `src/core/mount-resolver.js` | `viewerCardId` 只挂当前 Agent 的内嵌书 |
+| `src/core/chat-engine.js` | `isAgent`、`agentMode`、Agent `_build`、重复用户输入修复 |
+| `src/ui/group-view.js` | 房间设置里的「每个角色独立上下文」开关 |
+| `src/ui/chat-view.js` | `房间 · N 位 · Agent` 徽标、预览视角说明 |
+
+### 15.3 验收脚本
+
+```bash
+node dev/check-agent-prompt.mjs   # 31/33/35：视角映射、私密书、重复输入
+node dev/check-agent-live.mjs     # 32/35：真实请求的角色标记与调用上限
+node dev/check-agent-ui.mjs       # 36：旧房默认关、手动升级、预览说明
+```
+
+> 限制：Agent 模式仍共用一份房间消息流和同一个后端模型；它解决“我是谁/别人说了什么”，不保证 7B 模型一定遵守角色边界。模型能力、卡面声线、系统提示仍决定最终质量。

@@ -896,7 +896,7 @@ export function mount(el, ctx) {
   function aboutCard() {
     const { el: cardEl, body } = card('关于', 'info');
     body.append(
-      h('div', { class: 'about-hero' }, h('img', { class: 'about-logo', src: 'icons/logo.svg', alt: '' }), h('div', {}, h('strong', {}, '袖珍酒馆 PocketTavern'), h('span', { class: 'muted small' }, 'v0.4.0 · 移动优先 PWA'))),
+      h('div', { class: 'about-hero' }, h('img', { class: 'about-logo', src: 'icons/logo.svg', alt: '' }), h('div', {}, h('strong', {}, '袖珍酒馆 PocketTavern'), h('span', { class: 'muted small' }, 'v0.5.0 · 移动优先 PWA'))),
       h('p', { class: 'muted small about-copy' }, '角色卡聊天、世界书、流式后端与插件。所有数据保存在本机 IndexedDB；没有遥测，也不会把内容发到你未配置的服务器。'),
       h('div', { class: 'about-meta' },
         h('span', {}, h('strong', {}, '存储'), ' IndexedDB pt-db'),

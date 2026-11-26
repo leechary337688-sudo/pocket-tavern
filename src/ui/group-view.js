@@ -35,7 +35,7 @@ function range(value, onInput) {
 
 /**
  * 打开群聊设置。传 chat 则编辑现有群聊，否则创建新群聊。
- * onSave({title, memberIds, worldIds, mode, memberState}) 由调用方写库/刷新引擎。
+ * onSave({title, memberIds, worldIds, mode, memberState, agentMode}) 由调用方写库/刷新引擎。
  */
 export async function openGroupEditor({ repo, settings, chat = null, onSave } = {}) {
   let cards = [];
@@ -56,6 +56,7 @@ export async function openGroupEditor({ repo, settings, chat = null, onSave } = 
     worlds: new Set(chat?.worldIds || []),
     mode: chat?.mode || settings?.group?.mode || 'natural_order',
     allowSelf: Boolean(chat?.allowSelfResponses ?? settings?.group?.allowSelfResponses),
+    agentMode: chat ? Boolean(chat.agentMode) : true,
     advanced: Boolean(chat?.worldIds?.length > 1),
     memberState: { ...(chat?.memberState || {}) },
   };
@@ -173,6 +174,9 @@ export async function openGroupEditor({ repo, settings, chat = null, onSave } = 
   const allow = h('input', { type: 'checkbox', class: 'switch-input', checked: state.allowSelf });
   allow.addEventListener('change', () => { state.allowSelf = allow.checked; });
 
+  const agent = h('input', { type: 'checkbox', class: 'switch-input', checked: state.agentMode });
+  agent.addEventListener('change', () => { state.agentMode = agent.checked; });
+
   const body = h('div', { class: 'group-editor' },
     h('div', { class: 'field-group' }, h('span', { class: 'field-label' }, '群聊标题'), titleInput),
     h('div', { class: 'settings-subhead settings-subhead--tight' }, h('h3', {}, '在座成员'), memberCount),
@@ -189,6 +193,10 @@ export async function openGroupEditor({ repo, settings, chat = null, onSave } = 
     h('div', { class: 'settings-toggle' },
       h('span', {}, h('strong', {}, '允许角色自问自答'), h('span', { class: 'muted small' }, '角色可以连续接自己的话，默认关')),
       h('span', { class: 'switch' }, allow, h('span', { class: 'switch__knob' })),
+    ),
+    h('div', { class: 'settings-toggle' },
+      h('span', {}, h('strong', {}, '每个角色独立上下文'), h('span', { class: 'muted small' }, 'Agent 模式：别人只以【角色名】出现在历史里，默认开；旧群聊需手动开启')),
+      h('span', { class: 'switch' }, agent, h('span', { class: 'switch__knob' })),
     ),
   );
 
@@ -222,6 +230,7 @@ export async function openGroupEditor({ repo, settings, chat = null, onSave } = 
               advancedWorlds: state.advanced,
               mode: state.mode,
               allowSelfResponses: state.allowSelf,
+              agentMode: state.agentMode,
               memberState,
             });
             overlay.close(true);

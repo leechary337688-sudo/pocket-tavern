@@ -3,6 +3,7 @@
 
 import { ApiClient } from '../core/api-client.js';
 import { buildPrompt } from '../core/prompt-builder.js';
+import { buildAgentPrompt } from '../core/agent-prompt.js';
 import { resolveMounts } from '../core/mount-resolver.js';
 import { planSpeakers, findMentions } from '../core/group-scheduler.js';
 import { estimateTokens } from '../core/tokenizer-lite.js';
@@ -13,6 +14,13 @@ const MAX_SWIPES = 5;
 const UNDO_MS = 5000;
 /** 群聊里一轮最多几个人接话，避免一按发送刷一屏 */
 const MAX_GROUP_TURNS = 3;
+
+/** 群聊点名只看正文；[状态]/[好感] JSON 里的角色名不算“提到” */
+function visibleForMentions(text = '') {
+  return String(text)
+    .replace(/^[ \t]*\[(状态|好感)\][ \t]*\{.*\}[ \t]*$/gm, '')
+    .trim();
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -151,6 +159,11 @@ export class ChatEngine {
     return this.kind === 'group';
   }
 
+  /** 每个角色独立视角的 Agent 群聊；旧群聊默认关闭。 */
+  get isAgent() {
+    return this.isGroup && Boolean(this.chat?.agentMode);
+  }
+
   /** 加载在座角色（群聊=全部成员；单聊=唯一主角）与各自的内嵌书。 */
   async _loadCast() {
     const chat = this.chat;
@@ -191,7 +204,7 @@ export class ChatEngine {
   }
 
   /** 解析本次组装要挂载的世界书（chat > persona > character > global）。 */
-  async resolveMounts() {
+  async resolveMounts(viewerCardId = '') {
     const worlds = await this.repo.listWorlds();
     const persona = (this.repo.personas || []).find?.((p) => p.id === this.settings?.personaId) || null;
     const result = resolveMounts({
@@ -207,6 +220,7 @@ export class ChatEngine {
       },
       persona,
       worlds,
+      viewerCardId: this.isAgent ? viewerCardId : '',
     });
     this.lastMounts = result;
     return result;
@@ -257,6 +271,7 @@ export class ChatEngine {
       title: this.chat.title,
       cardId: this.chat.cardId,
       kind: this.kind,
+      agentMode: Boolean(this.chat.agentMode),
       worldIds: Array.isArray(this.chat.worldIds) ? [...this.chat.worldIds] : [],
       advancedWorlds: Boolean(this.chat.advancedWorlds),
       memberIds: Array.isArray(this.chat.memberIds) ? [...this.chat.memberIds] : [],
@@ -307,6 +322,10 @@ export class ChatEngine {
     }
     if (patch.allowSelfResponses !== undefined) {
       this.chat.allowSelfResponses = Boolean(patch.allowSelfResponses);
+      touched = true;
+    }
+    if (patch.agentMode !== undefined) {
+      this.chat.agentMode = Boolean(patch.agentMode);
       touched = true;
     }
     if (patch.memberState && typeof patch.memberState === 'object') {
@@ -583,29 +602,53 @@ export class ChatEngine {
     });
   }
 
-  async _build({ history, userInput, extraSystem, speaker = null }) {
-    const mounts = await this.resolveMounts();
+  async _build({ history, userInput, extraSystem, speaker = null, mode = 'new', currentUserInHistory = true }) {
     const speakerCard = speaker || this.card || null;
-    const result = buildPrompt({
-      card: speakerCard,
-      speakerCard,
-      cast: this.isGroup ? this.cast : [],
-      messages: history,
-      worlds: mounts.worlds,
-      settings: { ...this.settings, __mounts: mounts.mounts, __speaker: this.isGroup ? speakerCard?.name || '' : '' },
-      userInput,
-      extraSystem,
-      sampler: this.settings.sampler,
-      charName: speakerCard?.name,
-      userName: this.settings?.personaName,
-    });
-    this.lastPrompt = { ...result, at: nowIso(), mounts };
+    const mounts = await this.resolveMounts(speakerCard?.id || '');
+    const agent = this.isAgent;
+    // 旧单聊/旧群聊路径：send 已把当前用户消息放进 history，
+    // buildPrompt 又会 append userInput，这里去掉重复的一条。
+    const last = history?.[history.length - 1];
+    const dedupHistory = (!agent && currentUserInHistory && userInput
+      && last?.sender === 'user' && String(last.text || '') === String(userInput))
+      ? history.slice(0, -1)
+      : history;
+    const result = agent
+      ? buildAgentPrompt({
+        viewer: speakerCard,
+        cast: this.cast,
+        messages: history,
+        worlds: mounts.worlds,
+        settings: { ...this.settings, __mounts: mounts.mounts, __speaker: speakerCard?.name || '', __agentMode: true },
+        userInput,
+        extraSystem,
+        sampler: this.settings.sampler,
+        charName: speakerCard?.name,
+        userName: this.settings?.personaName,
+        includeCurrentUserInput: currentUserInHistory,
+      })
+      : buildPrompt({
+        card: speakerCard,
+        speakerCard,
+        cast: this.isGroup ? this.cast : [],
+        messages: dedupHistory,
+        worlds: mounts.worlds,
+        settings: { ...this.settings, __mounts: mounts.mounts, __speaker: this.isGroup ? speakerCard?.name || '' : '' },
+        userInput,
+        extraSystem,
+        sampler: this.settings.sampler,
+        charName: speakerCard?.name,
+        userName: this.settings?.personaName,
+      });
+    this.lastPrompt = { ...result, at: nowIso(), mounts, agent };
     this.bus?.emit('chat:promptReady', {
       chatId: this.chat?.id,
       prompt: result.messages,
       trace: result.trace,
       card: speakerCard ? { ...speakerCard } : null,
       mounts: mounts.mounts,
+      agentId: agent ? speakerCard?.id || '' : '',
+      agentName: agent ? speakerCard?.name || '' : '',
     });
     return result;
   }
@@ -636,7 +679,7 @@ export class ChatEngine {
       if (message) lastMessage = message;
       // 自然接话：角色回复里整词点名了尚未发言的成员，就把对方请到下一棒。
       if (message && this.isGroup && options.mode === 'new' && turn.cardId) {
-        const mentions = findMentions(message.text, this.members)
+        const mentions = findMentions(visibleForMentions(message.text), this.members)
           .filter((member) => member.id && member.id !== turn.cardId && !spoken.has(member.id))
           .filter((member) => (member.memberState || 'active') === 'active');
         for (const member of mentions) {
@@ -701,7 +744,7 @@ export class ChatEngine {
 
     let prompt;
     try {
-      prompt = await this._build({ history, userInput, extraSystem, speaker: speakerCard });
+      prompt = await this._build({ history, userInput, extraSystem, speaker: speakerCard, mode, currentUserInHistory: mode === 'new' });
     } catch (err) {
       await this._handleFailure(err, placeholder);
       return;
@@ -1080,7 +1123,7 @@ export class ChatEngine {
       const turns = this.planTurns({ userInput, messages });
       speaker = turns[0]?.card || this.members.find((m) => m.id === this.lastSpeakerId) || this.members[0];
     }
-    return this._build({ history: messages, userInput, extraSystem, speaker: speaker || this.card });
+    return this._build({ history: messages, userInput, extraSystem, speaker: speaker || this.card, currentUserInHistory: false });
   }
 
   async impersonate() {
