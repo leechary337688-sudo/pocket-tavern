@@ -5,6 +5,10 @@ dev/lighthouse-pwa.json
 dev/export-test.ptpack
 dev/*.log
 
+# 本地诊断/退役脚本与真实模型验收产物（保留在机器上，不进仓库）
+dev/_retired/
+dev/lmstudio-real/
+
 # 系统与依赖
 .DS_Store
 Thumbs.db

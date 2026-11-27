@@ -21,7 +21,7 @@ import { mount as mountGen } from './ui/gen-view.js';
 import { openPublishFlow } from './ui/publish-view.js';
 import { openGroupEditor } from './ui/group-view.js';
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.6.0';
 const bootScreen = document.getElementById('boot-screen');
 const bootFill = bootScreen?.querySelector('.boot-screen__fill');
 const bootLabel = bootScreen?.querySelector('.boot-screen__label');

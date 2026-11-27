@@ -290,10 +290,15 @@ export class ApiClient {
       min_p: s.min_p,
       presence_penalty: s.presence,
       frequency_penalty: s.frequency,
-      repetition_penalty: s.rep_pen,
       max_tokens: s.max_tokens,
       ...(s.seed !== -1 ? { seed: s.seed } : {}),
     });
+    // R6：stop / repetition_penalty 不是 OpenAI 规范字段，只发给明确支持的端点，
+    // 免得被严格的反向代理（如 DeepSeek 官方）整个请求打回。
+    const lenient = /deepseek/i.test(model || '') ? false
+      : (s.rep_pen !== 1 || s.stop?.length) ? true : false;
+    if (s.stop?.length) body.stop = s.stop;
+    if (lenient && s.rep_pen !== 1) body.repetition_penalty = s.rep_pen;
     return { url: openAIUrl(base, 'chat'), headers, body, kind: 'openai', secret };
   }
 

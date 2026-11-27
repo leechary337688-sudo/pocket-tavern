@@ -54,7 +54,7 @@ const chatId = await page.evaluate(async () => {
     first_mes: '（墨羽抬头。）「你终于来了。」', mes_example: '', tags: ['测试'], creator: 'test',
   });
   const chat = await repo.createChat(a, {
-    title: 'Agent 运行测试', kind: 'group', memberIds: [a.id, b.id], agentMode: true,
+    title: 'Agent 运行测试', kind: 'group', memberIds: [a.id, b.id], agentMode: true, turnBudget: 2,
     memberState: { [a.id]: { talkativeness: 1 }, [b.id]: { talkativeness: 1 } },
     messages: [{
       id: `msg-${Date.now()}`, sender: 'char', text: a.first_mes, swipes: [], swipeIndex: 0,

@@ -28,6 +28,19 @@ const LIMITS = {
 
 const INT_FIELDS = new Set(['top_k', 'seed', 'max_tokens', 'context_window']);
 
+/**
+ * 停止词（R6）：一旦模型想开写别人的标题/对话续写标记，就在这里截断。
+ * 注意不放「」——那会把对白截断。
+ */
+export const STOP_WORDS = Object.freeze(['\n【', '\n用户：', '\n玩家：', '\nassistant:', '\nAssistant:', '\n\n【']);
+
+/** 采样档位（P1）：按模型能力自动挑一套 */
+export const SAMPLER_PRESETS = Object.freeze({
+  small: { temperature: 0.8, top_p: 0.9, presence: 0.35, frequency: 0.25, max_tokens: 220 },
+  mid: { temperature: 0.9, top_p: 0.95, presence: 0.3, frequency: 0.2, max_tokens: 400 },
+  strong: { temperature: 1.0, top_p: 0.95, presence: 0.2, frequency: 0.15, max_tokens: 500 },
+});
+
 /** 合并默认值并夹到合法区间；非法数字回退默认值。 */
 export function normalizeSampler(raw = {}) {
   const out = { ...SAMPLER_DEFAULTS };
@@ -45,7 +58,20 @@ export function normalizeSampler(raw = {}) {
     out.max_tokens = Math.max(64, Math.min(out.max_tokens, Math.floor(out.context_window / 2)));
   }
   if (out.top_p === 0) out.top_p = 0.0001; // 有些后端拒绝 0
+  // R6：停止词也走归一化，保证每个请求都带上（空数组即关闭）
+  const rawStop = raw?.stop;
+  out.stop = Array.isArray(rawStop)
+    ? rawStop.map((x) => String(x || '')).filter(Boolean).slice(0, 4)
+    : rawStop === false
+      ? []
+      : [...STOP_WORDS];
   return out;
+}
+
+/** 采样档位合并（P1）：把档位套到当前采样上，但不覆盖用户显式改过的 stop */
+export function applyTier(s = SAMPLER_DEFAULTS, tier = 'mid') {
+  const preset = SAMPLER_PRESETS[tier] || SAMPLER_PRESETS.mid;
+  return normalizeSampler({ ...s, ...preset, context_window: s.context_window, seed: s.seed, stop: s.stop });
 }
 
 /** 供 UI 阅读的采样摘要 */

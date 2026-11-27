@@ -91,7 +91,7 @@ export function mount(el, ctx) {
             sendDate: new Date().toISOString(),
             tokenEstimate: 0,
             cardId: host.id,
-            speaker: host.id,
+            speaker: host.name,
           }] : [],
         });
         ctx.onGroupCreated?.(chat);

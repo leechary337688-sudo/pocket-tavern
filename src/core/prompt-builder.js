@@ -13,7 +13,7 @@ export const PROMPT_BUDGET = Object.freeze({
   chat: 0.2,
 });
 
-const DEFAULT_SYSTEM = `你正在「袖珍酒馆」中扮演「{{char}}」。请始终以{{char}}的身份、口吻和记忆回应，用第一人称行动与说话。不要替{{user}}决定行动或台词，不要跳出角色解释自己是 AI。描写克制、具体、有画面感，每次回复通常 1–4 段。`;
+const DEFAULT_SYSTEM = `你正在「袖珍酒馆」中扮演「{{char}}」。请始终以{{char}}的身份、口吻和记忆回应。动作行用（）包裹，动词开头，不写主语"我"；对白用「」。不要替{{user}}决定行动或台词，不要替其他角色说话，不要跳出角色解释自己是 AI。描写克制、具体，每次回复通常 2–3 段。`;
 
 const now = () => new Date();
 
@@ -229,30 +229,41 @@ export function buildPrompt({
     eos: '',
   };
 
-  // 群聊：以“当前发言者”的身份说话
+  // 群聊：以“当前发言者”的身份说话（R3：删掉“或只做简短反应”，那等于邀请模型代写别人）
   const speaker = settings?.__speaker || '';
   trace.speaker = speaker;
   if (speaker) {
     trace.sections.push({
       id: 'speaker',
       label: '发言者',
-      text: `本轮发言者：${speaker}。只以 ${speaker} 的身份回应，其他角色保持沉默或只做简短反应。`,
+      text: `本轮发言者：${speaker}。只以 ${speaker} 的身份回应；其他角色这一轮不说话，由系统另行安排。`,
       tokens: 0,
       budget: 0,
     });
     trace.sections[trace.sections.length - 1].tokens = estimateTokens(trace.sections[trace.sections.length - 1].text);
   }
 
-  // 1) 系统提示
+  // 1) 系统提示（R5：分成“身份锁 + 可裁剪部分”，身份锁永不裁剪）
   const custom = settings?.prompt?.system ? applyMacros(settings.prompt.system, macCtx) : '';
   const cardSystem = safeCard.system_prompt ? applyMacros(safeCard.system_prompt, macCtx) : '';
   const safety = settings?.nsfw
     ? '内容分级：成人向（18+）。可以描写亲密与张力，仍需尊重角色与用户边界。'
     : '内容分级：全年龄向（PG-13）。避免露骨或极端描写。';
   const extra = extraSystem ? `【临时系统提示】\n${applyMacros(extraSystem, macCtx)}` : '';
-  const systemFull = [applyMacros(DEFAULT_SYSTEM, macCtx), cardSystem, custom, safety, extra].filter(Boolean).join('\n\n');
-  const systemSec = clip(systemFull, budget.system, '系统提示');
+  const pinned = settings?.__pinned ? applyMacros(String(settings.__pinned), macCtx) : '';
+  const lock = [applyMacros(DEFAULT_SYSTEM, macCtx), pinned].filter(Boolean).join('\n\n');
+  const rest = [cardSystem, custom, safety, extra].filter(Boolean).join('\n\n');
+  const lockTokens = estimateTokens(lock);
+  const restCap = Math.max(64, budget.system - lockTokens);
+  const restSec = clip(rest, restCap, '系统提示');
+  const systemSec = {
+    text: [lock, restSec.text].filter(Boolean).join('\n\n'),
+    tokens: lockTokens + restSec.tokens,
+    truncated: restSec.truncated,
+    pinned: true,
+  };
   trace.sections.push({ id: 'system', label: '系统提示', ...systemSec, budget: budget.system });
+  trace.sections[trace.sections.length - 1].tokens = estimateTokens(systemSec.text);
 
   // 2) 世界书常量
   const allEntries = collectEntries(worlds);
@@ -396,13 +407,21 @@ export function buildPrompt({
   };
   trace.sections.push(beforeSection, afterSection);
 
-  // 5) 聊天记录（从最新往前取，预算 20%）
+  // 5) 聊天记录（从最新往前取，预算 20%；R8/R11：别人的发言带【角色名】标签）
+  const labelOf = (m) => {
+    if (m.sender === 'user') return '用户';
+    const name = m.speaker || (m.cardId === safeCard?.id ? char : '') || '';
+    // 自己的发言不带标签（agent 视角里 assistant 就是自己），别人的带【名】
+    if (name && name !== char) return `【${name}】`;
+    return '角色';
+  };
   const history = messages
     .filter((m) => m && m.sender !== 'system' && !m.ephemeral && !m.localOnly)
     .map((m) => ({
       id: m.id,
       role: m.sender === 'user' ? 'user' : 'assistant',
       content: String(m.text || ''),
+      label: labelOf(m),
       tokens: estimateTokens(String(m.text || '')),
     }))
     .filter((m) => m.content);
@@ -420,7 +439,7 @@ export function buildPrompt({
   const chatSection = {
     id: 'chat',
     label: '聊天记录',
-    text: kept.map((m) => `${m.role === 'user' ? '用户' : '角色'}：${m.content}`).join('\n\n'),
+    text: kept.map((m) => `${m.label}：${m.content}`).join('\n\n'),
     tokens: chatTokens,
     budget: budget.chat,
     truncated: trace.dropped.length > 0,
@@ -442,7 +461,7 @@ export function buildPrompt({
     trace.dropped.push({ id: item.id, role: item.role, preview: item.content.slice(0, 60), tokens: item.tokens, reason: '上下文总预算' });
     chatTokens -= item.tokens;
     chatSection.tokens = chatTokens;
-    chatSection.text = kept.map((m) => `${m.role === 'user' ? '用户' : '角色'}：${m.content}`).join('\n\n');
+    chatSection.text = kept.map((m) => `${m.label}：${m.content}`).join('\n\n');
     chatSection.count = kept.length;
     chatSection.truncated = true;
     droppedChat += 1;
@@ -466,7 +485,19 @@ export function buildPrompt({
     shrink(beforeSection);
     shrink(trace.sections.find((s) => s.id === 'worldConst'));
     shrink(cardSection);
-    shrink(trace.sections.find((s) => s.id === 'system'));
+    // 系统提示里的身份锁不参与裁剪：只缩可裁剪部分
+    const sysSec = trace.sections.find((s) => s.id === 'system');
+    if (sysSec && trace.totalTokens > available && sysSec.text) {
+      const deficit = trace.totalTokens - available;
+      const keep = Math.max(lockTokens, (sysSec.tokens || 0) - deficit);
+      const r = truncateToTokens(sysSec.text, keep);
+      if (r.text && r.tokens >= lockTokens) {
+        sysSec.text = r.text;
+        sysSec.tokens = r.tokens;
+        sysSec.truncated = true;
+        trace.totalTokens = sumSections() + trace.userInputTokens + 4;
+      }
+    }
   }
   trace.overBudget = trace.totalTokens > available;
   trace.chatTokens = chatTokens;
@@ -483,7 +514,10 @@ export function buildPrompt({
   if (finalSystemParts.length) apiMessages.push({ role: 'system', content: finalSystemParts.join('\n\n') });
   for (const m of kept) apiMessages.push({ role: m.role, content: m.content });
   if (afterSection.text) apiMessages.push({ role: 'system', content: afterSection.text });
-  if (userText) apiMessages.push({ role: 'user', content: userText });
+  // H3 尾 cue：把身份与格式钉在最后一行（最便宜的防串台手段）
+  const cue = String(settings?.__tailCue || '').trim();
+  if (userText) apiMessages.push({ role: 'user', content: cue ? `${userText}\n\n${cue}` : userText });
+  trace.tailCue = cue;
 
   // 供「组装预览」按最终顺序展示
   trace.messages = apiMessages.map((m) => ({ role: m.role, content: m.content, tokens: estimateTokens(m.content) }));

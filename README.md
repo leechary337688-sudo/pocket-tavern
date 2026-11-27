@@ -3,7 +3,7 @@
 一个移动优先、安装即用的 SillyTavern 风格单页 PWA：角色卡聊天、世界书、多后端流式接入、本地插件系统，以及可自托管的创意工坊。
 原生 ES2022 + ESM，**开发态免构建**；数据只留在这台设备的 IndexedDB；没有遥测，也不会把内容发去你配置的后端之外。
 
-> 当前版本：`0.5.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布 · 0.4：剧情状态 / 好感 / 章节日记 / 剧情导演 / 两套预设世界 · 0.5：每个角色一个独立上下文的 Agent 房间
+> 当前版本：`0.6.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布 · 0.4：剧情状态 / 好感 / 章节日记 / 剧情导演 / 两套预设世界 · 0.5：每个角色一个独立上下文的 Agent 房间 · 0.6：一轮一人 / 身份锁 / 输出闸 / 采样分档
 > 补丁 A/B：试穿只写 `trials` + contentHash 判重/查重合并；CCv3 内嵌书、挂载优先级与同 key 冲突高亮；群聊 natural_order。
 
 ---
@@ -704,7 +704,7 @@ node --check src/ext/*.js
 ### 14.1 房间与成员状态
 
 - 一个房间 = 1 本主世界书 + 几位角色。单聊也可在「更多 → 世界书挂载」挂 1 本馆藏主书；群聊可在「启用多本世界书」高级模式挂最多 8 本。卡片内嵌书不占名额，角色在场才激活。
-- 群聊自然顺序：上一条整词点名 → 被点名者必接；其余成员按 `talkativeness` 掷骰；`allow_self_responses` 控制连说。角色 A 的生成文本里提到 B，B 会在下一棒接话（每轮最多 3 位）。
+- 群聊自然顺序：上一条整词点名 → 被点名者必接；其余成员按 `talkativeness` 掷骰；`allow_self_responses` 控制连说。角色 A 的生成文本里提到 B，B 是否接话由 0.6 的「允许自动接力」开关决定（默认关；开时最多 3 位）。
 - 成员状态 `active / away / dead`：dead 不进骰池，被点名时提示「TA 已退场（可在回忆中相见）」；away/dead 头像灰化；角色状态卡可一键切回在场。
 
 ### 14.2 结构化状态与好感
@@ -749,7 +749,7 @@ node dev/check-04-320.mjs            # 320 宽预设选择器/设置溢出
 
 验收 23–30 对应：23 单元（归属）、24 单元（回合/日志）、25 单元（情感/优先级）、26 单元（好感/发糖）、27 单元（15 回合/48h）、28 预设、29/30 浏览器。所有插件都是内置示例，可以单独开关；禁用后不挂载面板、不装饰头像，旧数据留在 `extdata` 但主程序不崩。
 
-> 注意：源码 0.5.0 与 APK/GitHub 的发布节奏分开；改完源码后重新执行 `node dev/mock-server.mjs`，APK 需要另行 `assembleDebug`。
+> 注意：源码 0.6.0 与 APK/GitHub 的发布节奏分开；改完源码后重新执行 `node dev/mock-server.mjs`，APK 需要另行 `assembleDebug`。
 
 ---
 
@@ -765,8 +765,9 @@ node dev/check-04-320.mjs            # 320 宽预设选择器/设置溢出
   - 其他人的历史 → `user`，文本前加 `【角色名】`；
   - 玩家 → `user`；
   - A 的角色卡、A 的内嵌书/私设、公共主书/人格/全局书进 system；别人的卡不喂第一人称。
-- 连续的非 assistant 消息会合并成一个 user 块，兼容 Claude/Gemini 不接受连续同角色的限制。
-- 一轮最多 3 位发言人；点名→必接、其余按 `talkativeness` 掷骰、`allow_self_responses` 不变。
+- 连续的非 assistant 消息**不再合并**（0.6）：每条历史保持独立，避免玩家台词和其他角色被拼成一整块 user。
+- 一轮默认只让 **1 位**发言人说话；房间设置「一轮最多几人说话」可调到 2/3。点名→必接，其余按 `talkativeness` 掷骰；没排满时会从在场 active 成员补位。
+- 「允许自动接力」默认关：模型正文提到别人时不再自动拉下一棒；打开后才按点名追加，且只追加一次。
 - 只过滤当前发言人的内嵌书；会话主书、人格书、全局书仍共享。
 - 正文预览会显示「Agent 视角：X」；插件 `chat:promptReady` 仍可改 prompt，事件里带 `agentId/agentName`。
 
@@ -774,10 +775,14 @@ node dev/check-04-320.mjs            # 320 宽预设选择器/设置溢出
 
 | 文件 | 作用 |
 |---|---|
-| `src/core/agent-prompt.js` | 视角映射、连续 user 合并、Agent prompt + trace |
+| `src/core/agent-prompt.js` | 视角映射（不合并相邻 user）、Agent prompt + trace |
+| `src/core/room-composer.js` | 身份锁 / 输出契约 / 尾 cue / 档位提示 |
+| `src/core/room-sanitizer.js` | 去说话人标题、截第二人、去第一人称主语、去重、推进检测 |
+| `src/core/room-state.js` | 房间状态账本（在场 / 未结 / 最近事件） |
+| `src/core/room-router.js` | 可预测选人（实验接口；默认链路仍走 `planTurns`） |
 | `src/core/mount-resolver.js` | `viewerCardId` 只挂当前 Agent 的内嵌书 |
-| `src/core/chat-engine.js` | `isAgent`、`agentMode`、Agent `_build`、重复用户输入修复 |
-| `src/ui/group-view.js` | 房间设置里的「每个角色独立上下文」开关 |
+| `src/core/chat-engine.js` | `isAgent`、`agentMode`、一轮一人、链式闸、输出闸、档位采样 |
+| `src/ui/group-view.js` | 房间设置里的「每个角色独立上下文」/「一轮最多几人」/「允许自动接力」 |
 | `src/ui/chat-view.js` | `房间 · N 位 · Agent` 徽标、预览视角说明 |
 
 ### 15.3 验收脚本
@@ -786,6 +791,61 @@ node dev/check-04-320.mjs            # 320 宽预设选择器/设置溢出
 node dev/check-agent-prompt.mjs   # 31/33/35：视角映射、私密书、重复输入
 node dev/check-agent-live.mjs     # 32/35：真实请求的角色标记与调用上限
 node dev/check-agent-ui.mjs       # 36：旧房默认关、手动升级、预览说明
+node dev/check-group-ui.mjs       # 群聊设置 / 一轮 2 位 / 空房
+node dev/check-chain-gate.mjs     # 0.6：默认不接力，显式开才追加；turnBudget 补位
+node dev/check-room-core.mjs      # 0.6：sanitizer / stop / tier / 路由 / 账本
 ```
 
-> 限制：Agent 模式仍共用一份房间消息流和同一个后端模型；它解决“我是谁/别人说了什么”，不保证 7B 模型一定遵守角色边界。模型能力、卡面声线、系统提示仍决定最终质量。
+---
+
+## 十六、0.6 一轮一人与输出闸（0.6.0）
+
+0.5 解决了「我是谁」，但 7B 模型仍会在一条回复里替别人说话、用「我」写动作、复读模板，并在正文提到名字时拉起整桌人。0.6 不改消息存储，只在提示词、选人和输出三处加硬闸。
+
+### 16.1 规则
+
+- **默认一轮一人**：`chat.turnBudget=1`；UI 可选 2/3，排不满时从在场 active 成员补位。
+- **链式点名默认关**：`chat.chainMentions=false`；打开后，当前发言者正文提到在场角色才追加一棒，且只追加一次。
+- **身份锁不被裁**：`DEFAULT_SYSTEM` + 角色身份锁进 `settings.__pinned`，预算裁到最紧也保留；历史里的自己不带标签，别人带 `【角色名】`。
+- **输出契约**：最后一条 system 固定「只写自己、用（）写动作、不替玩家行动、不解释 AI」；生成后再过 `room-sanitizer`：去说话人标题、截断第二人、去「我」开头动作、去重复行。
+- **采样分档**：`small/mid/strong` 按模型/上下文窗口挑温度、top_p、presence/frequency、max_tokens；`stop` 默认最多 4 条，DeepSeek 不发 `repetition_penalty`。
+- **状态账本**：只从最近消息提取在场/未结/最近事件，作为附加 system 注入，不写回聊天记录。
+
+### 16.2 文件
+
+| 文件 | 作用 |
+|---|---|
+| `src/core/room-composer.js` | 身份锁、输出契约、尾 cue、档位提示 |
+| `src/core/room-sanitizer.js` | 输出四道闸；返回 `{text, removed, cut, flagged}` |
+| `src/core/room-router.js` | 可预测选人实验接口（当前主链路仍走 `chat-engine.planTurns`） |
+| `src/core/room-state.js` | 房间状态账本 |
+| `src/core/sampler.js` | `STOP_WORDS`、`small/mid/strong`、`applyTier` |
+| `src/core/api-client.js` | OpenAI 兼容 `stop`；DeepSeek 不带 `repetition_penalty` |
+
+### 16.3 验收脚本
+
+```bash
+node dev/check-agent-prompt.mjs   # 10/10：身份锁、契约、不再合并
+node dev/check-agent-live.mjs     # 7/7：turnBudget=2 的两请求与角色标记
+node dev/check-agent-ui.mjs       # 8/8：Agent 房间 UI
+node dev/check-group-ui.mjs       # 10/10：群聊设置、一轮 2 位、空房
+node dev/check-v3.mjs             # 9/9：房间/草稿/邀请（旧链式改成一轮 2 位）
+node dev/check-chain-gate.mjs     # 4/4：默认不接力 / 显式接力 / turnBudget 补位
+node dev/check-room-core.mjs      # 10/10：输出闸 / stop / tier / 路由 / 账本
+node dev/check-patch-v2.mjs       # 10/10：补丁 A/B 回归
+node dev/check-pwa.mjs            # PWA 安装性 + 离线壳
+```
+
+### 16.4 真实 7B 验收（2026-11-27）
+
+用 LM Studio `qwen2.5-7b-instruct-uncensored`（`127.0.0.1:1234`）跑 2 人房、`turnBudget=2`：
+
+```bash
+node dev/real-lmstudio.mjs
+```
+
+结果 `REAL LM STUDIO OK (13/13)`：约 3.0 秒、2 个请求、3 条角色消息；无尾 cue 泄漏、无别人标题、无「（我…」主语、第二个 Agent 的「此刻」使用自己的场景。真实验收同时暴露并修复了两个问题：群聊欢迎语的 `speaker` 用 card id 导致历史标签错误；第二个 Agent 的账本场景沿用房主场景。
+
+> 7B 仍会把 40–100 字写成 80–120 字的多段，并容易写内心独白；这是模型能力/采样问题，不是串台。调教与 QLoRA 方案见 `docs/7B训练与调教建议.md`。
+
+> 限制：输出闸只能减少串台，不能保证 7B 模型完全遵守；`room-router` 仍是实验接口，主链路使用 `planTurns`。源码 0.6.0 尚未重新构建 APK / 更新 GitHub Release；当前线上 Release 仍为 0.5.0。

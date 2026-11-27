@@ -6,6 +6,11 @@ import { buildPrompt } from '../core/prompt-builder.js';
 import { buildAgentPrompt } from '../core/agent-prompt.js';
 import { resolveMounts } from '../core/mount-resolver.js';
 import { planSpeakers, findMentions } from '../core/group-scheduler.js';
+import { sanitizeOutput } from '../core/room-sanitizer.js';
+import { applyTier } from '../core/sampler.js';
+import { ledgerText, extractLedger } from '../core/room-state.js';
+import { tailCue } from '../core/room-composer.js';
+import { looksAdvancing } from '../core/room-sanitizer.js';
 import { estimateTokens } from '../core/tokenizer-lite.js';
 import { makeId } from '../data/db.js';
 
@@ -20,6 +25,23 @@ function visibleForMentions(text = '') {
   return String(text)
     .replace(/^[ \t]*\[(状态|好感)\][ \t]*\{.*\}[ \t]*$/gm, '')
     .trim();
+}
+
+/**
+ * 0.6 输出闸（docs/pt-prompt-v1）：只收群聊/角色发言，单聊同样适用——
+ * 串台标题、【别人】的第二段、旁白总结、“（我…）”都在这层被剪掉。
+ */
+function sanitizeSpeakerText(engine, text, speaker) {
+  const cast = engine.members?.length ? engine.members : (speaker ? [speaker] : []);
+  const result = sanitizeOutput(text, {
+    cast,
+    char: speaker?.name || engine.card?.name || '',
+    viewerName: speaker?.name || '',
+  });
+  if (result.removed.length) {
+    engine.lastSanitize = { removed: result.removed, cut: result.cut, flagged: result.flagged, at: nowIso() };
+  }
+  return result.text;
 }
 
 function nowIso() {
@@ -89,6 +111,8 @@ export class ChatEngine {
     this._mode = 'new';
     this._manualStop = false;
     this._interrupted = false;
+    this._chainMentions = false;
+    this.roomLedger = null;
     this._notice = '';
     this._undo = null;
     this._undoTimer = null;
@@ -144,6 +168,8 @@ export class ChatEngine {
     this.state = 'idle';
     this.generatingMessage = null;
     this._interrupted = false;
+    this._chainMentions = Boolean(this.chat.chainMentions);
+    this._refreshLedger();
     this.lastPrompt = null;
     this._emit('open', { chat: this.chat, card: this.card, members: this.members, kind: this.kind });
     this.bus?.emit('chat:changed', { chatId: this.chat.id, chat: this.chat });
@@ -234,6 +260,8 @@ export class ChatEngine {
       return card ? [{ cardId: card.id, name: card.name, reason: '单聊', card }] : [];
     }
     const group = this.settings?.group || {};
+    // R1（0.6）：turnBudget 默认 1——一轮只让一个人说话，避免“整桌人接力”。
+    const budget = Math.max(1, Math.min(MAX_GROUP_TURNS, Number(this.chat?.turnBudget ?? 1) || 1));
     const plan = planSpeakers({
       members: this.members,
       messages: history,
@@ -243,9 +271,21 @@ export class ChatEngine {
       defaultTalkativeness: Number(group.defaultTalkativeness ?? 0.5),
     });
     const turns = (plan.plan || [])
-      .slice(0, MAX_GROUP_TURNS)
+      .slice(0, budget)
       .map((item) => ({ ...item, card: this.members.find((m) => m.id === item.cardId) || null }))
       .filter((item) => item.card);
+    // turnBudget 是“这一轮要几个人接”，不只看掷骰结果：没排满时从在场成员补位，
+    // 否则用户把「一轮 2 位」打开后仍可能只收到一条回复。
+    if (turns.length < budget) {
+      const used = new Set(turns.map((t) => t.cardId));
+      for (const member of this.members) {
+        if (turns.length >= budget) break;
+        if (!member?.id || used.has(member.id)) continue;
+        if ((member.memberState || 'active') !== 'active') continue;
+        used.add(member.id);
+        turns.push({ cardId: member.id, name: member.name, reason: '轮次补位', card: member });
+      }
+    }
     turns.blockedMentions = plan.blockedMentions || [];
     return turns;
   }
@@ -258,6 +298,55 @@ export class ChatEngine {
 
   updateSettings(settings) {
     this.settings = settings;
+  }
+
+  /** 采样档位（0.6）：连接里可显式指定，否则按上下文窗口猜。 */
+  currentTier() {
+    const explicit = this.settings?.sampler?.tier;
+    if (explicit === 'small' || explicit === 'mid' || explicit === 'strong') return explicit;
+    const cw = Number(this.settings?.sampler?.context_window) || 8192;
+    const model = String(this.settings?.connection?.model || '').toLowerCase();
+    if (/235b|405b|claude|gpt-5|sonnet|opus|gemini-2|gemini-3|deepseek/i.test(model) || cw >= 60000) return 'strong';
+    if (cw >= 16000) return 'mid';
+    return 'small';
+  }
+
+  /** R7：最近两条角色回复出现重复长句时，给一条反重复提示 */
+  _repeatHint(history = []) {
+    const chars = (history || []).filter((m) => m?.sender === 'char' && m.text).slice(-2);
+    if (chars.length < 2) return '';
+    const grams = (t) => {
+      const s = String(t).replace(/\s+/g, '');
+      const out = new Set();
+      for (let i = 0; i + 12 <= s.length; i += 3) out.add(s.slice(i, i + 12));
+      return out;
+    };
+    const [a, b] = chars.map((m) => grams(m.text));
+    let hit = 0;
+    for (const g of b) if (a.has(g)) hit += 1;
+    if (hit < 2) return '';
+    return '【反重复】上一条已经用过同样的句式。这一轮别说重复的话，换动作、换角度，或者直接用一句短的打断气氛。';
+  }
+
+  /** P0“推进”：连续两条角色回复都没有推进信号时，强制本轮推进 */
+  _shouldAdvance(history = []) {
+    const chars = (history || []).filter((m) => m?.sender === 'char' && m.text).slice(-2);
+    if (chars.length < 2) return false;
+    return chars.every((m) => !looksAdvancing(m.text));
+  }
+
+  /** 状态账本（S4/S5）：从历史重新提取，只在内存里用，不写聊天记录。 */
+  _refreshLedger() {
+    if (!this.chat) return;
+    try {
+      this.roomLedger = extractLedger({
+        messages: this.chat.messages,
+        members: this.members,
+        scene: this.chat.scene || this.card?.scenario || '',
+      });
+    } catch {
+      this.roomLedger = null;
+    }
   }
 
   getMessages() {
@@ -326,6 +415,15 @@ export class ChatEngine {
     }
     if (patch.agentMode !== undefined) {
       this.chat.agentMode = Boolean(patch.agentMode);
+      touched = true;
+    }
+    if (patch.turnBudget !== undefined) {
+      this.chat.turnBudget = Math.max(1, Math.min(3, Number(patch.turnBudget) || 1));
+      touched = true;
+    }
+    if (patch.chainMentions !== undefined) {
+      this._chainMentions = Boolean(patch.chainMentions);
+      this.chat.chainMentions = Boolean(patch.chainMentions);
       touched = true;
     }
     if (patch.memberState && typeof patch.memberState === 'object') {
@@ -557,6 +655,7 @@ export class ChatEngine {
     if (!target) return false;
     this._emit('notice', { level: 'info', message: '连接恢复了，自动接着写…' });
     this._interrupted = false;
+    this._refreshLedger();
     try {
       await this.resumeMessage(target.id);
       return true;
@@ -573,6 +672,7 @@ export class ChatEngine {
     if (this.state !== 'streaming') return;
     this._manualStop = true;
     this._interrupted = false;
+    this._refreshLedger();
     if (this.abortController) this.abortController.abort();
     this.abortController = null;
     this._flushBuffer();
@@ -596,7 +696,7 @@ export class ChatEngine {
   _makeApi() {
     return new ApiClient({
       connection: this.settings.connection,
-      sampler: this.settings.sampler,
+      sampler: applyTier(this.settings?.sampler || {}, this.currentTier()),
       timeoutMs: 30000,
       retries: 2,
     });
@@ -606,6 +706,16 @@ export class ChatEngine {
     const speakerCard = speaker || this.card || null;
     const mounts = await this.resolveMounts(speakerCard?.id || '');
     const agent = this.isAgent;
+    // 采样档位 + 房间状态账本（0.6）：small/mid/strong 决定长度契约与 stop。
+    const tier = this.currentTier();
+    const sampler = applyTier(this.settings.sampler || {}, tier);
+    const ledger = this.roomLedger
+      ? ledgerText(
+        { ...this.roomLedger, scene: speakerCard?.scenario || this.roomLedger.scene },
+        { char: speakerCard?.name, user: this.settings?.personaName || '旅人' },
+      )
+      : '';
+    const hint = this._repeatHint(history);
     // 旧单聊/旧群聊路径：send 已把当前用户消息放进 history，
     // buildPrompt 又会 append userInput，这里去掉重复的一条。
     const last = history?.[history.length - 1];
@@ -621,11 +731,14 @@ export class ChatEngine {
         worlds: mounts.worlds,
         settings: { ...this.settings, __mounts: mounts.mounts, __speaker: speakerCard?.name || '', __agentMode: true },
         userInput,
-        extraSystem,
-        sampler: this.settings.sampler,
+        extraSystem: [ledger, extraSystem].filter(Boolean).join('\n\n'),
+        sampler,
         charName: speakerCard?.name,
         userName: this.settings?.personaName,
         includeCurrentUserInput: currentUserInHistory,
+        tier,
+        repeatHint: hint,
+        advance: this._shouldAdvance(history),
       })
       : buildPrompt({
         card: speakerCard,
@@ -633,14 +746,14 @@ export class ChatEngine {
         cast: this.isGroup ? this.cast : [],
         messages: dedupHistory,
         worlds: mounts.worlds,
-        settings: { ...this.settings, __mounts: mounts.mounts, __speaker: this.isGroup ? speakerCard?.name || '' : '' },
+        settings: { ...this.settings, __mounts: mounts.mounts, __speaker: this.isGroup ? speakerCard?.name || '' : '', __tailCue: tailCue({ char: speakerCard?.name || '', user: this.settings?.personaName || '旅人', tier, advance: this._shouldAdvance(history) }) },
         userInput,
-        extraSystem,
-        sampler: this.settings.sampler,
+        extraSystem: [ledger, hint, extraSystem].filter(Boolean).join('\n\n'),
+        sampler,
         charName: speakerCard?.name,
         userName: this.settings?.personaName,
       });
-    this.lastPrompt = { ...result, at: nowIso(), mounts, agent };
+    this.lastPrompt = { ...result, at: nowIso(), mounts, agent, tier };
     this.bus?.emit('chat:promptReady', {
       chatId: this.chat?.id,
       prompt: result.messages,
@@ -677,8 +790,9 @@ export class ChatEngine {
         break;
       }
       if (message) lastMessage = message;
-      // 自然接话：角色回复里整词点名了尚未发言的成员，就把对方请到下一棒。
-      if (message && this.isGroup && options.mode === 'new' && turn.cardId) {
+      // R1（0.6）：不再因为模型正文里写出了成员名就自动接力——那会让整桌人无限回话。
+      // 需要多人时由房间设置 turnBudget 显式决定，路由在 send/regenerate 时已经算好。
+      if (message && this.isGroup && options.mode === 'new' && turn.cardId && this._chainMentions) {
         const mentions = findMentions(visibleForMentions(message.text), this.members)
           .filter((member) => member.id && member.id !== turn.cardId && !spoken.has(member.id))
           .filter((member) => (member.memberState || 'active') === 'active');
@@ -696,6 +810,7 @@ export class ChatEngine {
       }
     }
     if (lastMessage) {
+      this._refreshLedger();
       this.bus?.emit('chat:generateAfter', { chatId: this.chat.id, message: cloneMessage(lastMessage) });
     }
     if (lastError && turns.length === 1) throw lastError;
@@ -706,6 +821,7 @@ export class ChatEngine {
     this._assertConfigured();
     this._manualStop = false;
     this._interrupted = false;
+    this._refreshLedger();
     this._buffer = '';
     this._mode = mode;
     const speakerCard = speaker || this.card || null;
@@ -778,8 +894,11 @@ export class ChatEngine {
         return;
       }
       this._flushBuffer();
-      const finalText = String(placeholder.text || '').trim() ? placeholder.text : '';
-      if (!finalText.trim()) throw new Error('模型没有返回内容');
+      // 四道闸：串台标题 / 第二个说话人 / 旁白尾巴 / “（我…）”
+      const raw = String(placeholder.text || '').trim();
+      const cleaned = sanitizeSpeakerText(this, raw, speaker);
+      const finalText = cleaned.trim();
+      if (!finalText) throw new Error('模型没有返回内容');
       this._finalizeSuccess(placeholder, mode, finalText);
       this._buffer = '';
       this._tokenBatch = 0;
@@ -834,6 +953,7 @@ export class ChatEngine {
     this.generatingMessage = null;
     this._mode = 'idle';
     this._interrupted = false;
+    this._refreshLedger();
     if (message.cardId) {
       this.lastSpeakerId = message.cardId;
       if (this.isGroup && this.chat) this.chat.speaker = message.cardId;
@@ -928,6 +1048,7 @@ export class ChatEngine {
     this.state = 'idle';
     this.generatingMessage = null;
     this._interrupted = false;
+    this._refreshLedger();
   }
 
   // ---------- 流式缓冲：16ms 或 8 token 批量 flush ----------

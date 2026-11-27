@@ -57,6 +57,8 @@ export async function openGroupEditor({ repo, settings, chat = null, onSave } = 
     mode: chat?.mode || settings?.group?.mode || 'natural_order',
     allowSelf: Boolean(chat?.allowSelfResponses ?? settings?.group?.allowSelfResponses),
     agentMode: chat ? Boolean(chat.agentMode) : true,
+    turnBudget: Number(chat?.turnBudget || 1),
+    chainMentions: Boolean(chat?.chainMentions),
     advanced: Boolean(chat?.worldIds?.length > 1),
     memberState: { ...(chat?.memberState || {}) },
   };
@@ -177,6 +179,17 @@ export async function openGroupEditor({ repo, settings, chat = null, onSave } = 
   const agent = h('input', { type: 'checkbox', class: 'switch-input', checked: state.agentMode });
   agent.addEventListener('change', () => { state.agentMode = agent.checked; });
 
+  // 0.6：一轮几个人（默认 1）+ 是否因模型提到名字而自动接力（默认关）
+  const budgetSelect = h('select', { class: 'field', 'aria-label': '一轮发言人数' },
+    h('option', { value: '1' }, '一轮 1 位（推荐）'),
+    h('option', { value: '2' }, '一轮 2 位'),
+    h('option', { value: '3' }, '一轮 3 位（容易抢话）'),
+  );
+  budgetSelect.value = String(state.turnBudget || 1);
+  budgetSelect.addEventListener('change', () => { state.turnBudget = Number(budgetSelect.value) || 1; });
+  const chain = h('input', { type: 'checkbox', class: 'switch-input', checked: state.chainMentions });
+  chain.addEventListener('change', () => { state.chainMentions = chain.checked; });
+
   const body = h('div', { class: 'group-editor' },
     h('div', { class: 'field-group' }, h('span', { class: 'field-label' }, '群聊标题'), titleInput),
     h('div', { class: 'settings-subhead settings-subhead--tight' }, h('h3', {}, '在座成员'), memberCount),
@@ -197,6 +210,15 @@ export async function openGroupEditor({ repo, settings, chat = null, onSave } = 
     h('div', { class: 'settings-toggle' },
       h('span', {}, h('strong', {}, '每个角色独立上下文'), h('span', { class: 'muted small' }, 'Agent 模式：别人只以【角色名】出现在历史里，默认开；旧群聊需手动开启')),
       h('span', { class: 'switch' }, agent, h('span', { class: 'switch__knob' })),
+    ),
+    h('div', { class: 'field-group' },
+      h('span', { class: 'field-label' }, '一轮最多几人说话'),
+      budgetSelect,
+      h('span', { class: 'field-hint' }, '默认 1 位：一次只写一个角色，最不容易串台。'),
+    ),
+    h('div', { class: 'settings-toggle' },
+      h('span', {}, h('strong', {}, '允许自动接力'), h('span', { class: 'muted small' }, '角色正文提到别人名字时，自动把下一棒交给他（默认关）')),
+      h('span', { class: 'switch' }, chain, h('span', { class: 'switch__knob' })),
     ),
   );
 
@@ -231,6 +253,8 @@ export async function openGroupEditor({ repo, settings, chat = null, onSave } = 
               mode: state.mode,
               allowSelfResponses: state.allowSelf,
               agentMode: state.agentMode,
+              turnBudget: state.turnBudget || 1,
+              chainMentions: Boolean(state.chainMentions),
               memberState,
             });
             overlay.close(true);

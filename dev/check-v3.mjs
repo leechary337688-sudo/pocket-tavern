@@ -116,6 +116,8 @@ for (let i = 0; i < await memberChecks.count(); i++) {
   if (!(await memberChecks.nth(i).isChecked())) await memberChecks.nth(i).check();
 }
 await page.locator('.group-editor input.field').first().fill('雾港账房夜谈');
+// 0.6 默认一轮一人；这里显式设成 2，验证一轮两位（不再靠“正文提到名字”自动接力）
+await page.getByLabel('一轮发言人数').selectOption('2');
 await page.getByRole('button', { name: /^开桌$/ }).click();
 await page.waitForURL(/#\/chat\//, { timeout: 6000 });
 await sleep(900);
@@ -146,7 +148,7 @@ for (let attempt = 0; attempt < 20; attempt++) {
   }, room.id);
   if (chain.replies.length >= 2) break;
 }
-check('A 被点名后先答，文本提到 B 时 B 也接话', chain.replies[0] === '程墨白' && chain.replies.includes('琥珀'), JSON.stringify(chain));
+check('一轮 2 位：A 先答，B 接话', chain.replies[0] === '程墨白' && chain.replies.includes('琥珀'), JSON.stringify(chain));
 await page.waitForFunction(() => !document.querySelector('.stream-cursor') && !document.querySelector('button[aria-label="停止"]'), null, { timeout: 15000 }).catch(() => {});
 await sleep(500);
 const uiNames = await page.locator('.msg__name').allTextContents();

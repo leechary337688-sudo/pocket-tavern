@@ -40,7 +40,7 @@ check('在座名单仍包含所有人', sys.includes('白棠') && sys.includes('
 check('自己的历史是 assistant', assistants.includes('我先开口。') && assistants.includes('这局有诈。') && !assistants.includes('我插一句。'));
 check('别人的发言是 user 且带【角色名】', users.some((t) => t.includes('【白棠】我插一句。')) && users.some((t) => t.includes('【陆沉】（点头）')));
 check('用户消息只出现一次', users.join('\n').split('你们怎么看？').length - 1 === 1);
-check('连续 user 已合并（白棠+陆沉+玩家在同一块）', users.some((t) => t.includes('【白棠】') && t.includes('【陆沉】') && t.includes('你们怎么看？')));
+check('相邻 user 不再合并（每条各自成条）', users.length >= 3 && users.some((t) => t.includes('【白棠】')) && users.some((t) => t.includes('【陆沉】')) && users.some((t) => t.includes('你们怎么看？')));
 check('trace 记录 agent 视角', result.trace.agent?.viewerName === '秦照');
 
 const preview = buildAgentPrompt({
