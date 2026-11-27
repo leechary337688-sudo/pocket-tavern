@@ -5,6 +5,8 @@
 
 > 当前版本：`0.6.0` · 演示角色：看板娘「琥珀」 · 演示世界书：琥珀的酒馆 · 创意工坊：AI 生成 / 试穿 / .ptpack 发布 · 0.4：剧情状态 / 好感 / 章节日记 / 剧情导演 / 两套预设世界 · 0.5：每个角色一个独立上下文的 Agent 房间 · 0.6：一轮一人 / 身份锁 / 输出闸 / 采样分档
 > 补丁 A/B：试穿只写 `trials` + contentHash 判重/查重合并；CCv3 内嵌书、挂载优先级与同 key 冲突高亮；群聊 natural_order。
+>
+> 在线试玩：https://leechary337688-sudo.github.io/pocket-tavern/ · 0.6.0 APK：[Release v0.6.0](https://github.com/leechary337688-sudo/pocket-tavern/releases/tag/v0.6.0)（0.5.0、0.4.0、0.3.0 保留作回滚）
 
 ---
 
@@ -848,4 +850,4 @@ node dev/real-lmstudio.mjs
 
 > 7B 仍会把 40–100 字写成 80–120 字的多段，并容易写内心独白；这是模型能力/采样问题，不是串台。调教与 QLoRA 方案见 `docs/7B训练与调教建议.md`。
 
-> 限制：输出闸只能减少串台，不能保证 7B 模型完全遵守；`room-router` 仍是实验接口，主链路使用 `planTurns`。源码 0.6.0 尚未重新构建 APK / 更新 GitHub Release；当前线上 Release 仍为 0.5.0。
+> 限制：输出闸只能减少串台，不能保证 7B 模型完全遵守；`room-router` 仍是实验接口，主链路使用 `planTurns`。源码 0.6.0 已构建 0.6.0 APK（5,660,670 字节，SHA-256 `A7C872DA...`）。
